@@ -24,7 +24,7 @@ window.config = {
     prefetch: 25,
   },
   // filterQueryParam: false,
-  defaultDataSourceName: 'dicomweb',
+  defaultDataSourceName: 'fondef10337',
   /* Dynamic config allows user to pass "configUrl" query string this allows to load config without recompiling application. The regex will ensure valid configuration source */
   // dangerouslyUseDynamicConfig: {
   //   enabled: true,
@@ -36,6 +36,61 @@ window.config = {
   //   regex: /.*/,
   // },
   dataSources: [
+    {
+      namespace: '@ohif/extension-default.dataSourcesModule.dicomweb',
+      sourceName: 'fondef10337',
+      configuration: {
+        friendlyName: 'Proyecto FONDEF-10337',
+        name: 'orthanc',
+        wadoUriRoot: 'https://segmai.scian.cl/pacs/wado',
+        qidoRoot: 'https://segmai.scian.cl/pacs/dicom-web',
+        wadoRoot: 'https://segmai.scian.cl/pacs/dicom-web',
+        // qidoSupportsIncludeField: true,
+        // imageRendering: 'wadors',
+        // thumbnailRendering: 'wadors',
+        // enableStudyLazyLoad: true,
+        // supportsFuzzyMatching: true,
+        // supportsWildcard: true,
+        supportsReject: true,
+        qidoSupportsIncludeField: true,
+        imageRendering: 'wadors',
+        thumbnailRendering: 'wadors',
+        enableStudyLazyLoad: true,
+        supportsFuzzyMatching: true,
+        supportsWildcard: true,
+        // requestOptions: {
+        //   // auth: {
+        //   //   user: 'fondef10337',
+        //   //   pass: 'fondef10337_orthanc',
+        //   // },
+        //   auth: 'fondef10337:fondef10337_orthanc',
+        //   // logRequests: true,
+        //   // logResponses: false,
+        //   // logTiming: true,
+        //   // requestFromBrowser: true,
+        // },
+        // requestOptions: {
+        //   headers: {
+        //     Authorization: 'Basic ' + btoa('fondef10337:fondef10337_orthanc'),
+        //   },
+        //   logRequests: true,
+        //   logResponses: true,
+        //   logTiming: true,
+        // },
+        requestOptions: {
+          // auth: 'cedai_pacs:cedai_orthanc',
+          auth: 'fondef10337:fondef10337_orthanc',
+          logRequests: true,
+          logResponses: false,
+          logTiming: true,
+          requestFromBrowser: false,
+        },
+        bulkDataURI: {
+          enabled: true,
+          relativeResolution: 'series',
+        },
+      },
+    },
     {
       namespace: '@ohif/extension-default.dataSourcesModule.dicomweb',
       sourceName: 'dicomweb',

@@ -66,8 +66,9 @@ function Header({
             data-cy="return-to-work-list"
           >
             {isReturnEnabled && <Icons.ChevronPatient className="text-primary-active w-8" />}
-            <div className="ml-1">
-              {WhiteLabeling?.createLogoComponentFn?.(React, props) || <Icons.OHIFLogo />}
+            <div className="ml-2">
+              {/* {WhiteLabeling?.createLogoComponentFn?.(React, props) || <Icons.OHIFLogo />} */}
+              <div className="text-xl font-bold text-white">{'T-CHAII'}</div>
             </div>
           </div>
         </div>

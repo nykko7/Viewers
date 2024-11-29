@@ -78,7 +78,26 @@ module.exports = (env, argv) => {
         // Hoisted Yarn Workspace Modules
         path.resolve(__dirname, '../../../node_modules'),
         SRC_DIR,
+        // T-CHAII extension and mode paths
+        path.resolve(__dirname, '../../../extensions/t-chaii'),
+        path.resolve(__dirname, '../../../modes/t-chaii'),
+        path.resolve(
+          __dirname,
+          'D:/Dev/Clients/u_chile_conce/03-Desarrollo/plataforma-web/Viewers/modes/t-chaii/node_modules'
+        ),
+        path.resolve(
+          __dirname,
+          'D:/Dev/Clients/u_chile_conce/03-Desarrollo/plataforma-web/Viewers/extensions/t-chaii/node_modules'
+        ),
       ],
+      alias: {
+        '@ohif/extension-t-chaii': path.resolve(
+          __dirname,
+          '../../../extensions/t-chaii/src/index.tsx'
+        ),
+      },
+      extensions: ['.js', '.jsx', '.json', '.ts', '.tsx'],
+      enforceExtension: false,
     },
     plugins: [
       // For debugging re-renders

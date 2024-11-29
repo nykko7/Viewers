@@ -3,8 +3,13 @@
 window.config = {
   routerBasename: '/',
   // whiteLabeling: {},
-  extensions: [],
-  modes: [],
+  extensions: [
+    '@ohif/extension-default',
+    '@ohif/extension-cornerstone',
+    '@ohif/extension-cornerstone-dicom-seg',
+    '@ohif/extension-t-chaii'
+  ],
+  modes: ['@ohif/mode-t-chaii'],
   customizationService: {},
   showStudyList: true,
   // some windows systems have issues with more than 3 web workers

@@ -1,4 +1,4 @@
-import React, { ReactNode } from 'react';
+import React, { Fragment, ReactNode } from 'react';
 import PropTypes from 'prop-types';
 import { useTranslation } from 'react-i18next';
 import classNames from 'classnames';
@@ -39,7 +39,7 @@ function Header({
       isSticky={isSticky}
       {...props}
     >
-      <div className="relative h-[48px] items-center ">
+      <div className="relative h-[48px] items-center">
         <div className="absolute left-0 top-1/2 flex -translate-y-1/2 items-center">
           <div
             className={classNames(
@@ -50,17 +50,21 @@ function Header({
             data-cy="return-to-work-list"
           >
             {isReturnEnabled && (
-              <Icon
-                name="chevron-left"
-                className="text-primary-active w-8"
-              />
+              <Fragment>
+                <Icon
+                  name="chevron-left"
+                  className="text-primary-active w-8"
+                />
+                <div>{'algo algo'}</div>
+              </Fragment>
             )}
             <div className="ml-1">
               {WhiteLabeling?.createLogoComponentFn?.(React, props) || <Svg name="logo-ohif" />}
+              {'algo algo'}
             </div>
           </div>
         </div>
-        <div className="absolute top-1/2 left-[250px]  h-8 -translate-y-1/2">{Secondary}</div>
+        <div className="absolute top-1/2 left-[250px] h-8 -translate-y-1/2">{Secondary}</div>
         <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 transform">
           <div className="flex items-center justify-center space-x-2">{children}</div>
         </div>

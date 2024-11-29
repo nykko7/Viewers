@@ -1,10 +1,10 @@
 import fs from 'fs';
 import path from 'path';
 import { execa } from 'execa';
-import { keywords } from './enums/index.js';
+import keywords from './enums/keywords.js';
 import { validateYarn, addExtensionToConfig, addModeToConfig } from './utils/index.js';
 
-async function linkPackage(packageDir, options, addToConfig, keyword) {
+async function linkPackage(packageDir, options, addToConfig, keywordType) {
   const { viewerDirectory } = options;
 
   // read package.json from packageDir
@@ -13,11 +13,11 @@ async function linkPackage(packageDir, options, addToConfig, keyword) {
   // name of the package
   const packageJSON = JSON.parse(file);
   const packageName = packageJSON.name;
-  const packageKeywords = packageJSON.keywords;
+  const packageKeywords = packageJSON.keywords || [];
 
   // check if package is an extension or a mode
-  if (!packageKeywords.includes(keyword)) {
-    throw new Error(`${packageName} is not ${keyword}`);
+  if (!packageKeywords.includes(keywordType)) {
+    throw new Error(`${packageName} is not ${keywordType}`);
   }
 
   const version = packageJSON.version;
@@ -67,13 +67,13 @@ async function linkPackage(packageDir, options, addToConfig, keyword) {
 }
 
 function linkExtension(packageDir, options) {
-  const keyword = keywords.EXTENSION;
-  linkPackage(packageDir, options, addExtensionToConfig, keyword);
+  const keywordType = keywords.EXTENSION;
+  linkPackage(packageDir, options, addExtensionToConfig, keywordType);
 }
 
 function linkMode(packageDir, options) {
-  const keyword = keywords.MODE;
-  linkPackage(packageDir, options, addModeToConfig, keyword);
+  const keywordType = keywords.MODE;
+  linkPackage(packageDir, options, addModeToConfig, keywordType);
 }
 
 export { linkExtension, linkMode };

@@ -1,27 +1,21 @@
 import { id } from './id';
 
-const defaultProtocol = {
+const defaultProtocol: AppTypes.HangingProtocol.Protocol = {
   id: 'tchaii',
   name: 'T-CHAII',
   locked: true,
-  createdDate: '2024-03-14T16:30:42.239Z',
-  modifiedDate: '2024-03-14T16:30:42.239Z',
+  createdDate: '2021-02-23T19:22:08.894Z',
+  modifiedDate: '2023-04-01',
   availableTo: {},
   editableBy: {},
+  protocolMatchingRules: [],
   toolGroupIds: ['default'],
-  numberOfPriorsReferenced: -1,
-  imageLoadStrategy: 'interleaveTopToBottom',
-  protocolMatchingRules: [
-    {
-      id: 'CTStudyMatch',
-      attribute: 'ModalitiesInStudy',
-      constraint: {
-        contains: ['CT'],
-      },
-      required: true,
-      weight: 1,
-    },
-  ],
+  // -1 would be used to indicate active only, whereas other values are
+  // the number of required priors referenced - so 0 means active with
+  // 0 or more priors.
+  numberOfPriorsReferenced: 0,
+  // Default viewport is used to define the viewport when
+  // additional viewports are added using the layout tool
   defaultViewport: {
     viewportOptions: {
       viewportType: 'stack',
@@ -29,58 +23,51 @@ const defaultProtocol = {
       allowUnmatchedView: true,
       syncGroups: [
         {
-          type: 'cameraPosition',
-          id: 'ctSync',
+          type: 'hydrateseg',
+          id: 'sameFORId',
           source: true,
           target: true,
+          options: {
+            matchingRules: ['sameFOR'],
+          },
         },
       ],
     },
     displaySets: [
       {
-        id: 'ctDisplaySet',
+        id: 'defaultDisplaySetId',
         matchedDisplaySetsIndex: -1,
       },
     ],
   },
   displaySetSelectors: {
-    ctDisplaySet: {
+    defaultDisplaySetId: {
+      // Matches displaysets, NOT series
       seriesMatchingRules: [
+        // Try to match series with images by default, to prevent weird display
+        // on SEG/SR containing studies
         {
-          attribute: 'Modality',
-          constraint: {
-            equals: 'CT',
-          },
-          required: true,
-          weight: 1,
-        },
-        {
+          weight: 10,
           attribute: 'numImageFrames',
           constraint: {
             greaterThan: { value: 0 },
           },
-          required: true,
-          weight: 10,
         },
-      ],
-    },
-    segDisplaySet: {
-      seriesMatchingRules: [
+        // This display set will select the specified items by preference
+        // It has no affect if nothing is specified in the URL.
         {
-          attribute: 'Modality',
+          attribute: 'isDisplaySetFromUrl',
+          weight: 10,
           constraint: {
-            equals: 'SEG',
+            equals: true,
           },
-          required: false,
-          weight: 1,
         },
       ],
     },
   },
   stages: [
     {
-      id: 'ctStage',
-      name: 'CT Stage',
+      name: 'default',
       viewportStructure: {
         layoutType: 'grid',
         properties: {
@@ -92,66 +79,41 @@ const defaultProtocol = {
         {
           viewportOptions: {
             viewportType: 'stack',
-            orientation: 'axial',
+            viewportId: 'default',
             toolGroupId: 'default',
+            // This will specify the initial image options index if it matches in the URL
+            // and will otherwise not specify anything.
             initialImageOptions: {
-              preset: 'middle',
+              custom: 'sopInstanceLocation',
             },
+            // Other options for initialImageOptions, which can be included in the default
+            // custom attribute, or can be provided directly.
+            //   index: 180,
+            //   preset: 'middle', // 'first', 'last', 'middle'
+            // },
             syncGroups: [
               {
-                type: 'cameraPosition',
-                id: 'ctSync',
+                type: 'hydrateseg',
+                id: 'sameFORId',
                 source: true,
-                target: false,
+                target: true,
+                options: {
+                  matchingRules: ['sameFOR'],
+                },
               },
             ],
           },
           displaySets: [
             {
-              id: 'ctDisplaySet',
+              id: 'defaultDisplaySetId',
             },
           ],
         },
-        // {
-        //   viewportOptions: {
-        //     viewportType: 'stack',
-        //     orientation: 'axial',
-        //     toolGroupId: 'default',
-        //     initialImageOptions: {
-        //       preset: 'middle',
-        //     },
-        //     syncGroups: [
-        //       {
-        //         type: 'cameraPosition',
-        //         id: 'ctSync',
-        //         source: false,
-        //         target: true,
-        //       },
-        //       {
-        //         type: 'hydrateseg',
-        //         id: 'sameFORId',
-        //         source: true,
-        //         target: true,
-        //         options: {
-        //           matchingRules: ['sameFOR'],
-        //         },
-        //       },
-        //     ],
-        //   },
-        //   displaySets: [
-        //     {
-        //       id: 'ctDisplaySet',
-        //     },
-        //     {
-        //       id: 'segDisplaySet',
-        //     },
-        //   ],
-        // },
       ],
+      createdDate: '2021-02-23T18:32:42.850Z',
     },
   ],
 };
-
 export default function getHangingProtocolModule() {
   return [
     {

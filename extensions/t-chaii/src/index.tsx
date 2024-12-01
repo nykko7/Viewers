@@ -2,6 +2,8 @@ import { id } from './id';
 import getHangingProtocolModule from './getHangingProtocolModule';
 import getPanelModule from './getPanelModule';
 import commandsModule from './commandsModule';
+import { Types } from '@ohif/core';
+import getCommandsModule from '@ohif/extension-default/src/commandsModule';
 
 const tchaiExtension = {
   /**
@@ -13,13 +15,7 @@ const tchaiExtension = {
 
   getPanelModule,
   getHangingProtocolModule,
-  getCommandsModule({ servicesManager, commandsManager, extensionManager }) {
-    return commandsModule({
-      servicesManager,
-      commandsManager,
-      extensionManager,
-    });
-  },
+  getCommandsModule,
 };
 
 export default tchaiExtension;

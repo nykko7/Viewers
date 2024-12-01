@@ -8,15 +8,17 @@ const ohif = {
   layout: '@ohif/extension-default.layoutTemplateModule.viewerLayout',
   sopClassHandler: '@ohif/extension-default.sopClassHandlerModule.stack',
   thumbnailList: '@ohif/extension-default.panelModule.seriesList',
+  hangingProtocol: '@ohif/extension-default.hangingProtocolModule.default',
 };
 
 const cornerstone = {
   viewport: '@ohif/extension-cornerstone.viewportModule.cornerstone',
+  panelTool: '@ohif/extension-cornerstone.panelModule.panelSegmentationWithTools',
 };
 
 const segmentation = {
   sopClassHandler: '@ohif/extension-cornerstone-dicom-seg.sopClassHandlerModule.dicom-seg',
-  panel: '@ohif/extension-cornerstone-dicom-seg.panelModule.panelSegmentation',
+  viewport: '@ohif/extension-cornerstone-dicom-seg.viewportModule.dicom-seg',
 };
 
 const tchaii = {
@@ -31,6 +33,8 @@ const extensionDependencies = {
   'extension-t-chaii': '^0.0.1',
 };
 
+const unsubscriptions: Array<() => void> = [];
+
 function modeFactory({ modeConfiguration }) {
   return {
     id,
@@ -38,7 +42,14 @@ function modeFactory({ modeConfiguration }) {
     displayName: 'T-CHAII Mode',
 
     onModeEnter: ({ servicesManager, extensionManager, commandsManager }: withAppTypes) => {
-      const { measurementService, toolbarService, toolGroupService } = servicesManager.services;
+      const {
+        measurementService,
+        toolbarService,
+        toolGroupService,
+        displaySetService,
+        segmentationService,
+        cornerstoneViewportService,
+      } = servicesManager.services;
 
       measurementService.clearMeasurements();
 
@@ -64,7 +75,7 @@ function modeFactory({ modeConfiguration }) {
       toolbarService.createButtonSection('segmentationToolbox', ['BrushTools', 'Shapes']);
     },
 
-    onModeExit: ({ servicesManager }: withAppTypes) => {
+    onModeExit: ({ servicesManager }) => {
       const {
         toolGroupService,
         syncGroupService,
@@ -74,6 +85,7 @@ function modeFactory({ modeConfiguration }) {
         uiModalService,
       } = servicesManager.services;
 
+      unsubscriptions.forEach(unsubscribe => unsubscribe());
       uiDialogService.dismissAll();
       uiModalService.hide();
       toolGroupService.destroy();
@@ -110,7 +122,7 @@ function modeFactory({ modeConfiguration }) {
                   displaySetsToDisplay: [ohif.sopClassHandler],
                 },
                 {
-                  namespace: cornerstone.viewport,
+                  namespace: segmentation.viewport,
                   displaySetsToDisplay: [segmentation.sopClassHandler],
                 },
               ],
@@ -119,11 +131,12 @@ function modeFactory({ modeConfiguration }) {
         },
       },
     ],
-    // defaultContext: ['VIEWER'],
+    defaultContext: ['VIEWER'],
     hangingProtocol: tchaii.hangingProtocol,
     sopClassHandlers: [ohif.sopClassHandler, segmentation.sopClassHandler],
     extensions: extensionDependencies,
     hotkeys: [...hotkeys.defaults.hotkeyBindings],
+    ...modeConfiguration,
   };
 }
 

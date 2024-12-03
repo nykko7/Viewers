@@ -17,7 +17,7 @@ function CustomSegmentationHeader({ segmentation }) {
   );
 
   return (
-    <div className="flex flex-col p-2">
+    <div className="flex flex-col p-2 text-white">
       <div className="mb-2 flex items-center justify-between">
         <span className="text-base font-bold">Segmentación</span>
         <span className="text-sm text-gray-500">
@@ -42,7 +42,7 @@ function CustomSegmentRow({ segment, segmentIndex }) {
   const typeColor = lesionTypes.find(t => t.value === type)?.color || 'gray';
 
   return (
-    <div className="flex flex-col border-b border-gray-800 p-2">
+    <div className="flex flex-col border-b border-gray-800 p-2 text-white">
       <div className="mb-2 flex items-center justify-between">
         <div className="flex items-center">
           <div className={`h-3 w-3 rounded-full bg-${typeColor}-500 mr-2`} />

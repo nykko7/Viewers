@@ -3,6 +3,10 @@ import {
   buttonVariants,
   ThemeWrapper,
   Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
   Command,
   Popover,
   Combobox,
@@ -82,6 +86,7 @@ import {
   Header,
 } from './components';
 import { DataRow } from './components/DataRow';
+import { SelectGroup } from './components/Select';
 
 import { useNotification, NotificationProvider } from './contextProviders';
 
@@ -90,6 +95,10 @@ export {
   // components
   Button,
   Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
   Command,
   Popover,
   Combobox,
@@ -140,6 +149,7 @@ export {
   SelectContent,
   SelectItem,
   SelectValue,
+  SelectGroup,
   DataRow,
   DropdownMenu,
   DropdownMenuTrigger,

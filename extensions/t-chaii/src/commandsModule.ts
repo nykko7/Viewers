@@ -1,5 +1,6 @@
 import { Types } from '@ohif/core';
 import DicomTagBrowser from '@ohif/extension-default/src/DicomTagBrowser/DicomTagBrowser';
+import { updateSegmentationInfo } from './utils/updateSegmentationInfo';
 
 const commandsModule = ({
   servicesManager,
@@ -12,6 +13,7 @@ const commandsModule = ({
     uiNotificationService,
     viewportGridService,
     displaySetService,
+    segmentationService,
   } = servicesManager.services;
 
   const actions = {
@@ -36,12 +38,24 @@ const commandsModule = ({
         title: 'DICOM Tag Browser',
       });
     },
+
+    updateSegmentationInfo({ segmentationId }: { segmentationId: string }) {
+      return updateSegmentationInfo({
+        segmentationId,
+        commandsManager,
+        segmentationService,
+        servicesManager,
+      });
+    },
   };
 
   const definitions = {
     // You can add command definitions here if needed
     openDICOMTagViewer: {
       commandFn: actions.openDICOMTagViewer,
+    },
+    updateSegmentationInfo: {
+      commandFn: actions.updateSegmentationInfo,
     },
   };
 

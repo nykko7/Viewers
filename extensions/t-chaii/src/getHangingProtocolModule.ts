@@ -11,6 +11,32 @@ const defaultProtocol: AppTypes.HangingProtocol.Protocol = {
   protocolMatchingRules: [],
   toolGroupIds: ['default'],
   numberOfPriorsReferenced: 0,
+  // Default viewport is used to define the viewport when
+  // additional viewports are added using the layout tool
+  defaultViewport: {
+    viewportOptions: {
+      viewportType: 'stack',
+      toolGroupId: 'default',
+      allowUnmatchedView: true,
+      syncGroups: [
+        {
+          type: 'hydrateseg',
+          id: 'sameFORId',
+          source: true,
+          target: true,
+          // options: {
+          //   matchingRules: ['sameFOR'],
+          // },
+        },
+      ],
+    },
+    displaySets: [
+      {
+        id: 'segDisplaySetId',
+        matchedDisplaySetsIndex: -1,
+      },
+    ],
+  },
   displaySetSelectors: {
     segDisplaySetId: {
       seriesMatchingRules: [
@@ -19,24 +45,6 @@ const defaultProtocol: AppTypes.HangingProtocol.Protocol = {
           attribute: 'Modality',
           constraint: {
             equals: 'SEG',
-          },
-        },
-      ],
-    },
-    defaultDisplaySetId: {
-      seriesMatchingRules: [
-        {
-          weight: 10,
-          attribute: 'numImageFrames',
-          constraint: {
-            greaterThan: { value: 0 },
-          },
-        },
-        {
-          attribute: 'isDisplaySetFromUrl',
-          weight: 10,
-          constraint: {
-            equals: true,
           },
         },
       ],
@@ -55,22 +63,16 @@ const defaultProtocol: AppTypes.HangingProtocol.Protocol = {
       viewports: [
         {
           viewportOptions: {
-            viewportType: 'stack',
-            viewportId: 'default',
-            toolGroupId: 'default',
             allowUnmatchedView: true,
             syncGroups: [
               {
-                type: 'cameraPosition',
-                id: 'positionSync',
+                type: 'hydrateseg',
+                id: 'sameFORId',
                 source: true,
                 target: true,
-              },
-              {
-                type: 'voi',
-                id: 'voiSync',
-                source: true,
-                target: true,
+                // options: {
+                //   matchingRules: ['sameFOR'],
+                // },
               },
             ],
           },
@@ -81,7 +83,6 @@ const defaultProtocol: AppTypes.HangingProtocol.Protocol = {
           ],
         },
       ],
-      createdDate: '2021-02-23T18:32:42.850Z',
     },
   ],
 };

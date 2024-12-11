@@ -63,10 +63,6 @@
       "version": "3.0.0"
     },
     {
-      "packageName": "@ohif/extension-t-chaii",
-      "version": "3.10.0-beta.5"
-    },
-    {
       "packageName": "extension-t-chaii",
       "version": "0.0.1"
     }
@@ -96,10 +92,6 @@
       "packageName": "@ohif/mode-basic-dev-mode",
       "default": false,
       "version": "3.0.0"
-    },
-    {
-      "packageName": "@ohif/mode-t-chaii",
-      "version": "0.0.1"
     },
     {
       "packageName": "mode-t-chaii",

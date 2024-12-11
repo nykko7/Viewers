@@ -1,6 +1,6 @@
 import React from 'react';
-import { SegmentationPanel } from './Panels';
-import { Toolbox } from '@ohif/ui';
+import { Toolbox } from '@ohif/ui-next';
+import CustomPanelSegmentation from './Panels/CustomPanelSegmentation';
 
 function getPanelModule({ commandsManager, extensionManager, servicesManager }) {
   const WrappedSegmentationPanel = () => {
@@ -13,14 +13,17 @@ function getPanelModule({ commandsManager, extensionManager, servicesManager }) 
           buttonSectionId="segmentationToolbox"
           title="Segmentation Tools"
         />
-        <SegmentationPanel commandsManager={commandsManager} servicesManager={servicesManager} />
+        <CustomPanelSegmentation
+          servicesManager={servicesManager}
+          commandsManager={commandsManager}
+        />
       </div>
     );
   };
 
   return [
     {
-      name: 'tchaii-segmentation',
+      name: 'segmentation',
       iconName: 'tab-segmentation',
       iconLabel: 'Segmentation',
       label: 'Segmentation',

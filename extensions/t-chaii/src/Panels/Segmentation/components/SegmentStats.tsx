@@ -1,5 +1,5 @@
 import React from 'react';
-import { SegmentStats as SegmentStatsType } from '../types';
+import { SegmentStatsType as SegmentStatsType } from '../types';
 
 type SegmentStatsProps = {
   stats: SegmentStatsType;

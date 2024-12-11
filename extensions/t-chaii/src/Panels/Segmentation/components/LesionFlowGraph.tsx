@@ -1,4 +1,4 @@
-import React, { useCallback } from 'react';
+import React, { useCallback, useState } from 'react';
 import {
   ReactFlow,
   Node,
@@ -9,9 +9,10 @@ import {
   Position,
   NodeProps,
   NodeTypes,
+  NodeToolbar,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from '@ohif/ui-next';
+import { LesionInfo } from '../types';
 
 // Type for the node data only
 type LesionNodeData = {
@@ -22,6 +23,7 @@ type LesionNodeData = {
   isCurrent: boolean;
   isSelected: boolean;
   type: 'maintained' | 'joined' | 'separated';
+  control: string;
 };
 
 // Complete node type extending Node
@@ -29,53 +31,54 @@ type LesionNode = Node<LesionNodeData>;
 
 const CustomNode = ({ data, id }: NodeProps) => {
   const nodeData = data as LesionNodeData;
+  const [isHovered, setIsHovered] = useState(false);
 
-  const bgColor = nodeData.isSelected
-    ? 'rgb(37, 99, 235)'
-    : nodeData.isCurrent
-      ? 'rgb(156, 163, 175)'
-      : 'white';
-  const textColor = nodeData.isSelected ? 'white' : 'black';
-  const borderColor = nodeData.isSelected
-    ? 'rgb(37, 99, 235)'
-    : nodeData.isCurrent
-      ? 'rgb(156, 163, 175)'
-      : 'rgb(209, 213, 219)';
+  const bgColor = nodeData.isCurrent && nodeData.isSelected ? 'rgb(37, 99, 235)' : 'white';
+  const textColor = nodeData.isCurrent && nodeData.isSelected ? 'white' : 'black';
+  const borderColor = nodeData.isSelected ? 'rgb(37, 99, 235)' : 'rgb(209, 213, 219)';
 
   return (
-    <TooltipProvider>
-      <Tooltip>
-        <TooltipTrigger>
-          <div
-            className="flex h-12 w-12 cursor-pointer items-center justify-center rounded-full border-2 transition-all duration-200 hover:scale-110"
-            style={{
-              background: bgColor,
-              borderColor: borderColor,
-            }}
-          >
-            <Handle type="target" position={Position.Top} style={{ background: 'transparent' }} />
-            <div className={`text-sm font-bold text-${textColor}`}>{nodeData.label}</div>
-            <Handle
-              type="source"
-              position={Position.Bottom}
-              style={{ background: 'transparent' }}
-            />
+    <>
+      <NodeToolbar
+        isVisible={isHovered}
+        position={Position.Right}
+        offset={10}
+        className="bg-background rounded-lg border p-3 text-white shadow-lg"
+      >
+        <div className="space-y-1">
+          <div className="text-center font-bold text-white">{nodeData.label}</div>
+          <div className="font-bold text-gray-200">
+            Control: <span className="font-normal">{nodeData.control}</span>
           </div>
-          <TooltipContent
-            side="right"
-            className="max-w-sm rounded-lg bg-white p-2 shadow-lg"
-            sideOffset={5}
-          >
-            <div className="space-y-2">
-              <div className="font-bold text-gray-900">{nodeData.label}</div>
-              <div className="text-gray-600">Date: {nodeData.date}</div>
-              <div className="text-gray-600">Volume: {nodeData.volume}ml</div>
-              <div className="text-gray-600">Diameter: {nodeData.diameter}mm</div>
-            </div>
-          </TooltipContent>
-        </TooltipTrigger>
-      </Tooltip>
-    </TooltipProvider>
+          <div className="font-bold text-gray-200">
+            Date: <span className="font-normal">{nodeData.date}</span>
+          </div>
+          <div className="font-bold text-gray-200">
+            Volume:{' '}
+            <span className="font-normal">
+              {nodeData.volume}mm<sup>3</sup>
+            </span>
+          </div>
+          <div className="font-bold text-gray-200">
+            Diameter: <span className="font-normal">{nodeData.diameter}mm</span>
+          </div>
+        </div>
+      </NodeToolbar>
+
+      <div
+        className="flex h-12 w-12 cursor-pointer items-center justify-center rounded-full border-2 transition-all duration-200 hover:scale-110"
+        style={{
+          background: bgColor,
+          borderColor: borderColor,
+        }}
+        onMouseEnter={() => setIsHovered(true)}
+        onMouseLeave={() => setIsHovered(false)}
+      >
+        <Handle type="target" position={Position.Top} style={{ background: 'transparent' }} />
+        <div className={`text-sm font-bold text-${textColor}`}>{nodeData.label}</div>
+        <Handle type="source" position={Position.Bottom} style={{ background: 'transparent' }} />
+      </div>
+    </>
   );
 };
 
@@ -88,6 +91,7 @@ type LesionFlowGraphProps = {
   currentControl: number;
   selectedLesionId?: string;
   onLesionSelect?: (lesionId: string) => void;
+  lesionInfo?: LesionInfo;
 };
 
 export function LesionFlowGraph({
@@ -95,26 +99,42 @@ export function LesionFlowGraph({
   currentControl,
   selectedLesionId,
   onLesionSelect,
+  lesionInfo,
 }: LesionFlowGraphProps) {
   const getNodesAndEdges = useCallback(() => {
     const nodes: Node<LesionNodeData>[] = [];
     const edges: Edge[] = [];
 
+    // Use actual controls from lesionInfo if available
+    const controls = lesionInfo?.controls || [];
+
+    // Define lesions based on the type
     const lesions = [
       {
         id: 'L1',
-        controls: Array.from({ length: 5 }, (_, i) => ({
-          date: `Control ${i + 1}`,
-          volume: Math.round(Math.random() * 10),
-          diameter: Math.round(Math.random() * 20),
+        controls: controls.map(control => ({
+          control: control.control,
+          date: control.date,
+          volume: control.volume,
+          diameter: control.majorDiameter,
         })),
       },
       {
         id: 'L2',
-        controls: Array.from({ length: 5 }, (_, i) => ({
-          date: `Control ${i + 1}`,
-          volume: Math.round(Math.random() * 10),
-          diameter: Math.round(Math.random() * 20),
+        controls: controls.map(control => ({
+          control: control.control,
+          date: control.date,
+          volume: control.volume,
+          diameter: control.majorDiameter,
+        })),
+      },
+      {
+        id: 'L3',
+        controls: controls.map(control => ({
+          control: control.control,
+          date: control.date,
+          volume: control.volume,
+          diameter: control.majorDiameter,
         })),
       },
     ];
@@ -129,6 +149,7 @@ export function LesionFlowGraph({
           position: { x: xOffset, y: i * 100 },
           data: {
             label: lesion.id,
+            control: control.control,
             date: control.date,
             volume: control.volume,
             diameter: control.diameter,
@@ -153,7 +174,7 @@ export function LesionFlowGraph({
     });
 
     return { nodes, edges };
-  }, [type, currentControl, selectedLesionId]);
+  }, [type, currentControl, selectedLesionId, lesionInfo]);
 
   const { nodes, edges } = getNodesAndEdges();
 
@@ -172,7 +193,7 @@ export function LesionFlowGraph({
         defaultEdgeOptions={{ type: 'smoothstep', animated: true }}
         fitView
         proOptions={{ hideAttribution: true }}
-        className="bg-white"
+        colorMode="dark"
       >
         <Background />
         <Controls />

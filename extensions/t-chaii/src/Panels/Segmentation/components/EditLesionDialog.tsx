@@ -220,6 +220,7 @@ export function EditLesionDialog({
                 currentControl={2}
                 selectedLesionId={selectedLesionId}
                 onLesionSelect={setSelectedLesionId}
+                lesionInfo={formData}
               />
             </div>
           </div>

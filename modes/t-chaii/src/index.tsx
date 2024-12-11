@@ -1,6 +1,7 @@
 import { hotkeys } from '@ohif/core';
 // import { triggerEvent } from '@cornerstonejs/core';
 import { Segment, Segmentation } from '@cornerstonejs/tools/types';
+import { getRenderingEngine } from '@cornerstonejs/core';
 import toolbarButtons from './toolbarButtons';
 import segmentationButtons from './segmentationButtons';
 import initToolGroups from './initToolGroups';
@@ -55,11 +56,13 @@ function modeFactory({ modeConfiguration }) {
         cornerstoneViewportService,
         customizationService,
         viewportGridService,
+        hangingProtocolService,
       } = servicesManager.services;
 
+      // Clear previous state
       measurementService.clearMeasurements();
 
-      // // Init Default and SR ToolGroups
+      // Init Default and SR ToolGroups
       initToolGroups(extensionManager, toolGroupService, commandsManager);
 
       // Reset the tool state
@@ -80,135 +83,104 @@ function modeFactory({ modeConfiguration }) {
 
       toolbarService.createButtonSection('segmentationToolbox', ['BrushTools', 'Shapes']);
 
-      // Handle display sets added
-      const onViewportChanged = async ({ viewportData, viewportId }) => {
-        console.log('onDisplaySetsAdded', viewportData);
+      // Handle viewport changes
+      const handleViewportChange = async ({ viewportData, viewportId }) => {
+        if (!viewportData || !viewportId) return;
 
-        const displaySet = displaySetService.getDisplaySetByUID(
-          viewportData.data[0].displaySetInstanceUID
-        );
+        try {
+          const displaySet = displaySetService.getDisplaySetByUID(
+            viewportData.data[0].displaySetInstanceUID
+          );
 
-        if (!displaySet) return;
+          if (!displaySet) return;
 
-        if (displaySet.Modality !== 'SEG') return;
+          // If it's a SEG displaySet, ensure we have the referenced CT loaded first
+          if (displaySet.Modality === 'SEG') {
+            const referencedDisplaySet = displaySetService.getDisplaySetByUID(
+              displaySet.referencedDisplaySetInstanceUID
+            );
 
-        console.log('viewportId', viewportId);
-        console.log('displaySet', displaySet);
-        console.log(
-          'displaySet.referencedDisplaySetInstanceUID',
-          displaySet.referencedDisplaySetInstanceUID
-        );
+            // If we don't have the referenced CT, load it first
+            if (!referencedDisplaySet) {
+              // Find the CT display set in the same study
+              const ctDisplaySets = displaySetService
+                .getDisplaySets()
+                .filter(
+                  ds => ds.Modality === 'CT' && ds.StudyInstanceUID === displaySet.StudyInstanceUID
+                );
 
-        const { segmentations_data } = await api.getSegmentations(displaySet.StudyInstanceUID);
-        console.log('segmentations_data', segmentations_data);
+              if (ctDisplaySets.length > 0) {
+                // Load the CT first
+                await viewportGridService.setDisplaySetsForViewport({
+                  viewportId,
+                  displaySetInstanceUIDs: [
+                    ctDisplaySets[0].displaySetInstanceUID,
+                    displaySet.displaySetInstanceUID,
+                  ],
+                });
+                return; // The viewport change event will fire again with both display sets
+              }
+            }
 
-        const segmentationsList = segmentationService.getSegmentations();
-        console.log('segmentationsList', segmentationsList);
+            // Ensure viewport is ready
+            const renderingEngine = getRenderingEngine('cornerstone');
+            if (!renderingEngine || !renderingEngine.getViewport(viewportId)) {
+              await commandsManager.run('initializeViewport', { viewportId });
+            }
 
-        const activeSegmentation = segmentationService.getActiveSegmentation(viewportId);
-        console.log('activeSegmentation', activeSegmentation);
+            // Load segmentation data
+            const { segmentations_data } = await api.getSegmentations(displaySet.StudyInstanceUID);
 
-        const labelmaps = segmentationService.getSegmentationRepresentations(viewportId, {
-          type: SegmentationRepresentations.Labelmap,
-        });
+            // Convert API segments to cornerstone format
+            for (const segData of segmentations_data) {
+              const segmentation = segmentationService.getSegmentation(segData.id);
+              if (segmentation) {
+                // Convert array of segments to object format
+                const segmentsObject = segData.segments.reduce((acc, segment, index) => {
+                  acc[index] = {
+                    segmentIndex: index,
+                    label: segment.label || `Segment ${index + 1}`,
+                    locked: false,
+                    active: false,
+                    cachedStats: {
+                      volume: segment.volume,
+                      axialDiameter: segment.axial_diameter,
+                      affected_organs: segment.affected_organs,
+                      classification: segment.classification,
+                    },
+                  };
+                  return acc;
+                }, {});
 
-        console.log('labelmaps', labelmaps);
-
-        // const segmentationId = segmentations_data.find(segmetation => segmentation.segmentation_id === activeSegmentation.segmentationId)
-        const segmentationId = '3e3c9031-0eaf-602a-5459-1f3e541a3a1a';
-
-        const segmentation = segmentationService.getSegmentation(segmentationId);
-        if (!segmentation) return;
-
-        for (const [segmentIndex, segment] of Object.entries(segmentation.segments)) {
-          const additionalStats = {
-            diameter: 50, // mm
-            volume: 50, // mL
-            affectedOrgan: 'Unknown',
-          };
-
-          // Update the segment's cached stats
-          const updatedSegment: Segment = {
-            ...segment,
-            cachedStats: {
-              ...segment.cachedStats,
-              ...additionalStats,
-            },
-          };
-
-          segmentation.segments[segmentIndex] = updatedSegment;
+                segmentationService.addOrUpdateSegmentation({
+                  ...segmentation,
+                  id: segData.id,
+                  label: segData.name,
+                  segments: segmentsObject,
+                });
+              }
+            }
+          }
+        } catch (error) {
+          console.warn('Error handling viewport change:', error);
         }
-
-        // Update the segmentation object
-        const updatedSegmentation: Segmentation = {
-          ...segmentation,
-          segments: {
-            ...segmentation.segments,
-          },
-        };
-
-        // Update the segmentation in the service
-        segmentationService.addOrUpdateSegmentation(updatedSegmentation);
       };
 
-      // Subscribe to display sets added event
-
-      const displaySetsAddedUnsubscribe = cornerstoneViewportService.subscribe(
+      // Subscribe to viewport changes
+      const unsubscribeViewportChange = cornerstoneViewportService.subscribe(
         cornerstoneViewportService.EVENTS.VIEWPORT_DATA_CHANGED,
-        onViewportChanged
+        handleViewportChange
       );
 
-      // Add to unsubscriptions for cleanup
-      unsubscriptions.push(displaySetsAddedUnsubscribe.unsubscribe);
+      unsubscriptions.push(unsubscribeViewportChange.unsubscribe);
 
-      // const displaySetsAddedUnsubscribe = displaySetService.subscribe(
-      //   displaySetService.EVENTS.DISPLAY_SETS_ADDED,
-      //   onDisplaySetsAdded
-      // );
-
-      // Add to unsubscriptions for cleanup
-      // unsubscriptions.push(displaySetsAddedUnsubscribe.unsubscribe);
-
+      // Add customizations
       customizationService.addModeCustomizations([
         {
           id: 'PanelSegmentation.tableMode',
           mode: 'expanded',
         },
-        // {
-        //   id: 'PanelSegmentation.onSegmentationAdd',
-        //   onSegmentationAdd: () => {
-        //     commandsManager.run('createNewLabelmapFromPT');
-        //   },
-        // },
-        // {
-        //   id: 'PanelSegmentation.readableText',
-        //   // remove following if you are not interested in that stats
-        //   // readableText: {
-        //   //   diameter: 'Diameter',
-        //   //   volume: 'Volume',
-        //   //   affectedOrgan: 'Affected Organ',
-        //   // },
-        // },
       ]);
-
-      // const viewportId = cornerstone.viewport;
-      // const displaySetUIDs = viewportGridService.getDisplaySetsUIDsForViewport(viewportId);
-      // const displaySets = displaySetUIDs.map(uid => displaySetService.getDisplaySetByUID(uid));
-
-      // viewportGridService.setDisplaySetsForViewport({
-      //   viewportId,
-      //   displaySetInstanceUIDs: displaySets.map(ds => ds.displaySetInstanceUID),
-      // });
-
-      // const displaySet = displaySetService.getDisplaySetByUID(
-      //   viewportGridService.getActiveViewportId()
-      // );
-      // const currentStudy = displaySet.referencedStudyInstanceUID;
-
-      // const segmentationsAdditionalData = await api.getSegmentations(currentStudy);
-
-      // console.log('segmentationsAdditionalData', segmentationsAdditionalData);
-      // segmentationService.addSegmentations(segmentationsAdditionalData.segmentations);
     },
 
     onModeExit: ({ servicesManager }: withAppTypes) => {

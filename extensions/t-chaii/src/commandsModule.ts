@@ -6,15 +6,7 @@ const commandsModule = ({
   servicesManager,
   commandsManager,
 }: Types.Extensions.ExtensionParams): Types.Extensions.CommandsModule => {
-  const {
-    customizationService,
-    measurementService,
-    hangingProtocolService,
-    uiNotificationService,
-    viewportGridService,
-    displaySetService,
-    segmentationService,
-  } = servicesManager.services;
+  const { viewportGridService, displaySetService, segmentationService } = servicesManager.services;
 
   const actions = {
     // You can add specific actions here if needed

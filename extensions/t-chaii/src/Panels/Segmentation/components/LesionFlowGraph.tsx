@@ -35,7 +35,8 @@ const CustomNode = ({ data, id }: NodeProps) => {
 
   const bgColor = nodeData.isCurrent && nodeData.isSelected ? 'rgb(37, 99, 235)' : 'white';
   const textColor = nodeData.isCurrent && nodeData.isSelected ? 'white' : 'black';
-  const borderColor = nodeData.isSelected ? 'rgb(37, 99, 235)' : 'rgb(209, 213, 219)';
+  // make the border
+  const borderColor = nodeData.isSelected ? 'rgb(37, 99, 235)' : 'rgb(156, 163, 175)';
 
   return (
     <>
@@ -66,7 +67,7 @@ const CustomNode = ({ data, id }: NodeProps) => {
       </NodeToolbar>
 
       <div
-        className="flex h-12 w-12 cursor-pointer items-center justify-center rounded-full border-2 transition-all duration-200 hover:scale-110"
+        className="flex h-12 w-12 cursor-pointer items-center justify-center rounded-full border-4 transition-all duration-200 hover:scale-110"
         style={{
           background: bgColor,
           borderColor: borderColor,

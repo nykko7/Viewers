@@ -216,7 +216,7 @@ export function EditLesionDialog({
             <div className="border-l pl-4">
               <Label>Lesion Follow-up Graph:</Label>
               <LesionFlowGraph
-                type="maintained"
+                type="separated"
                 currentControl={2}
                 selectedLesionId={selectedLesionId}
                 onLesionSelect={setSelectedLesionId}

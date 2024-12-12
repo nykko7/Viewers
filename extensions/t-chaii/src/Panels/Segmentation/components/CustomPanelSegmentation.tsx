@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { SegmentationTable } from '@ohif/ui-next';
+import { Button, SegmentationTable } from '@ohif/ui-next';
 import { useActiveViewportSegmentationRepresentations } from '@ohif/extension-cornerstone';
 import { getRenderingEngine, getEnabledElement } from '@cornerstonejs/core';
 import { CustomSegmentationSegments } from './CustomSegmentationSegments';
@@ -134,6 +134,10 @@ export function CustomPanelSegmentation({
     };
   }, [viewportGridService, commandsManager]);
 
+  const handleSaveChanges = () => {
+    console.log('save changes');
+  };
+
   return (
     <SegmentationTable
       disabled={disabled}
@@ -188,6 +192,28 @@ export function CustomPanelSegmentation({
           {/* <SegmentationTable.Segments /> */}
           <CustomSegmentationSegments />
         </SegmentationTable.Expanded>
+      )}
+      {segmentationsWithRepresentations.length > 0 && (
+        <div className="flex flex-col gap-2 p-2">
+          <div className="bg-secondary-dark text-secondary-foreground grid grid-cols-2 gap-2 p-2">
+            <span>Total volume:</span>
+            <span className="text-right font-bold">
+              0 mm<sup>3</sup>
+            </span>
+            <span>Total diameter:</span>
+            <span className="text-right font-bold">0 mm</span>
+          </div>
+
+          <Button
+            onClick={handleSaveChanges}
+            className="w-full"
+            variant="default"
+            size="lg"
+            disabled
+          >
+            Save Changes
+          </Button>
+        </div>
       )}
     </SegmentationTable>
   );

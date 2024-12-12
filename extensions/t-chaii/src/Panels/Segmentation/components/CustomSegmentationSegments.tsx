@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
-import { ScrollArea } from '@ohif/ui-next';
+import { Button, ScrollArea } from '@ohif/ui-next';
 import { useSegmentationTableContext } from '@ohif/ui-next';
 import { EditLesionDialog } from './EditLesionDialog';
 import { SegmentGroup } from './SegmentGroup';
 import { useSegmentGroups } from '../hooks/useSegmentGroups';
 import { SegmentRow } from './SegmentRow';
+import { cn } from '@ohif/ui-next/lib/utils';
 
 type CustomSegmentationSegmentsProps = {
   segmentation?: any;
@@ -52,17 +53,22 @@ export function CustomSegmentationSegments({
   };
 
   const segmentCount = Object.keys(representationToUse.segments || {}).length;
-  const height = mode === 'collapsed' ? 'h-[600px]' : `h-[${segmentCount * 200}px]`;
+  // const height = mode === 'collapsed' ? 'h-[600px]' : `h-[${segmentCount * 200}px]`;
+  const height = mode === 'collapsed' ? 'h-[600px]' : `h-[540px]`;
 
   const groupedSegments = useSegmentGroups(
     representationToUse.segments || {},
     segmentationToUse.segments || {}
   );
 
+  function handleSaveChanges(event: React.MouseEvent<HTMLButtonElement>) {
+    console.log('save changes');
+  }
+
   return (
     <>
       <ScrollArea
-        className={`ohif-scrollbar invisible-scrollbar bg-bkg-low space-y-px ${height}`}
+        className={cn(`ohif-scrollbar invisible-scrollbar bg-bkg-low space-y-px ${height}`)}
         showArrows={true}
       >
         <SegmentGroup

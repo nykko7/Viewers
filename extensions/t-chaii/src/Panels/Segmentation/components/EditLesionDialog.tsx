@@ -199,7 +199,7 @@ export function EditLesionDialog({
               </div>
 
               <div className="space-y-2">
-                <Label>Study Follow-up:</Label>
+                <Label>Lesion Follow-up:</Label>
                 <div className="overflow-hidden rounded border">
                   <div className="min-w-full divide-y divide-gray-200">
                     <div className="bg-secondary-dark border-secondary-light">

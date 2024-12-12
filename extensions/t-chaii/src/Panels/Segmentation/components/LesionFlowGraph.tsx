@@ -28,7 +28,6 @@ type LesionNodeData = {
   isCurrent: boolean;
   isSelected: boolean;
   type: 'maintained' | 'joined' | 'separated';
-  control: string;
 };
 
 // Complete node type extending Node
@@ -47,26 +46,20 @@ const CustomNode = ({ data, id }: NodeProps) => {
     <>
       <NodeToolbar
         isVisible={isHovered}
-        position={Position.Right}
+        position={Position.Bottom}
         offset={10}
         className="bg-background border-input rounded-lg border p-4 text-white shadow-lg"
       >
         <div className="space-y-1">
           <div className="text-center font-bold text-white">{nodeData.label}</div>
-          <div className="font-bold text-gray-200">
-            Control: <span className="font-normal">{nodeData.control}</span>
-          </div>
-          <div className="font-bold text-gray-200">
-            Date: <span className="font-normal">{nodeData.created_at}</span>
-          </div>
-          <div className="font-bold text-gray-200">
+          <div className="text-gray-200">
             Volume:{' '}
-            <span className="font-normal">
+            <span className="font-bold">
               {nodeData.volume}mm<sup>3</sup>
             </span>
           </div>
-          <div className="font-bold text-gray-200">
-            Diameter: <span className="font-normal">{nodeData.max_diameter}mm</span>
+          <div className="text-gray-200">
+            Diameter: <span className="font-bold">{nodeData.max_diameter}mm</span>
           </div>
         </div>
       </NodeToolbar>
@@ -167,7 +160,6 @@ export function LesionFlowGraph({
           position: { x: xOffset, y: i * 100 },
           data: {
             label: lesion.id,
-            control: study.name,
             created_at: study.created_at,
             updated_at: study.updated_at,
             name: study.name,
@@ -215,6 +207,9 @@ export function LesionFlowGraph({
         onNodeClick={handleNodeClick}
         defaultEdgeOptions={{ type: 'smoothstep', animated: true }}
         fitView
+        fitViewOptions={{
+          padding: 0.3,
+        }}
         proOptions={{ hideAttribution: true }}
         colorMode="dark"
       >

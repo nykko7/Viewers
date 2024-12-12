@@ -17,9 +17,14 @@ import { LesionInfo } from '../types';
 // Type for the node data only
 type LesionNodeData = {
   label: string;
-  date: string;
+  created_at: string;
+  updated_at: string;
+  name: string;
+  axial_diameter: number;
+  coronal_diameter: number;
+  sagittal_diameter: number;
   volume: number;
-  diameter: number;
+  max_diameter: number;
   isCurrent: boolean;
   isSelected: boolean;
   type: 'maintained' | 'joined' | 'separated';
@@ -44,7 +49,7 @@ const CustomNode = ({ data, id }: NodeProps) => {
         isVisible={isHovered}
         position={Position.Right}
         offset={10}
-        className="bg-background rounded-lg border p-3 text-white shadow-lg"
+        className="bg-background border-input rounded-lg border p-4 text-white shadow-lg"
       >
         <div className="space-y-1">
           <div className="text-center font-bold text-white">{nodeData.label}</div>
@@ -52,7 +57,7 @@ const CustomNode = ({ data, id }: NodeProps) => {
             Control: <span className="font-normal">{nodeData.control}</span>
           </div>
           <div className="font-bold text-gray-200">
-            Date: <span className="font-normal">{nodeData.date}</span>
+            Date: <span className="font-normal">{nodeData.created_at}</span>
           </div>
           <div className="font-bold text-gray-200">
             Volume:{' '}
@@ -61,7 +66,7 @@ const CustomNode = ({ data, id }: NodeProps) => {
             </span>
           </div>
           <div className="font-bold text-gray-200">
-            Diameter: <span className="font-normal">{nodeData.diameter}mm</span>
+            Diameter: <span className="font-normal">{nodeData.max_diameter}mm</span>
           </div>
         </div>
       </NodeToolbar>
@@ -106,36 +111,48 @@ export function LesionFlowGraph({
     const nodes: Node<LesionNodeData>[] = [];
     const edges: Edge[] = [];
 
-    // Use actual controls from lesionInfo if available
-    const controls = lesionInfo?.controls || [];
+    // Use actual studies from lesionInfo if available
+    const studies = lesionInfo?.studySegments || [];
 
     // Define lesions based on the type
     const lesions = [
       {
         id: 'L1',
-        controls: controls.map(control => ({
-          control: control.control,
-          date: control.date,
-          volume: control.volume,
-          diameter: control.majorDiameter,
+        studies: studies.map(study => ({
+          created_at: study.created_at,
+          updated_at: study.updated_at,
+          name: study.name,
+          axial_diameter: study.axial_diameter,
+          coronal_diameter: study.coronal_diameter,
+          sagittal_diameter: study.sagittal_diameter,
+          volume: study.volume,
+          max_diameter: Math.max(study.coronal_diameter, study.sagittal_diameter),
         })),
       },
       {
         id: 'L2',
-        controls: controls.map(control => ({
-          control: control.control,
-          date: control.date,
-          volume: control.volume,
-          diameter: control.majorDiameter,
+        studies: studies.map(study => ({
+          created_at: study.created_at,
+          updated_at: study.updated_at,
+          name: study.name,
+          axial_diameter: study.axial_diameter,
+          coronal_diameter: study.coronal_diameter,
+          sagittal_diameter: study.sagittal_diameter,
+          volume: study.volume,
+          max_diameter: Math.max(study.coronal_diameter, study.sagittal_diameter),
         })),
       },
       {
         id: 'L3',
-        controls: controls.map(control => ({
-          control: control.control,
-          date: control.date,
-          volume: control.volume,
-          diameter: control.majorDiameter,
+        studies: studies.map(study => ({
+          created_at: study.created_at,
+          updated_at: study.updated_at,
+          name: study.name,
+          axial_diameter: study.axial_diameter,
+          coronal_diameter: study.coronal_diameter,
+          sagittal_diameter: study.sagittal_diameter,
+          volume: study.volume,
+          max_diameter: Math.max(study.coronal_diameter, study.sagittal_diameter),
         })),
       },
     ];
@@ -143,17 +160,22 @@ export function LesionFlowGraph({
     lesions.forEach((lesion, lesionIndex) => {
       const xOffset = lesionIndex * 150;
 
-      lesion.controls.forEach((control, i) => {
+      lesion.studies.forEach((study, i) => {
         nodes.push({
           id: `${lesion.id}-${i}`,
           type: 'lesion',
           position: { x: xOffset, y: i * 100 },
           data: {
             label: lesion.id,
-            control: control.control,
-            date: control.date,
-            volume: control.volume,
-            diameter: control.diameter,
+            control: study.name,
+            created_at: study.created_at,
+            updated_at: study.updated_at,
+            name: study.name,
+            axial_diameter: study.axial_diameter,
+            coronal_diameter: study.coronal_diameter,
+            sagittal_diameter: study.sagittal_diameter,
+            volume: study.volume,
+            max_diameter: Math.max(study.coronal_diameter, study.sagittal_diameter),
             isCurrent: i === currentControl,
             isSelected: lesion.id === selectedLesionId,
             type: 'maintained',

@@ -6,15 +6,17 @@ export type LesionType = 'Lymph node' | 'Tumor' | 'Mass' | 'Nodule';
 
 export type AffectedOrgan = 'Right lung' | 'Left lung' | 'Liver' | 'Brain';
 
-export type LesionControl = {
-  control: string;
-  date: string;
+export type StudySegments = {
+  created_at: string;
+  updated_at: string;
+  name: string;
+  axial_diameter: number;
+  coronal_diameter: number;
+  sagittal_diameter: number;
   volume: number;
-  axialDiameter: number;
-  majorDiameter: number;
-  volumeChange?: number;
-  axialDiameterChange?: number;
-  majorDiameterChange?: number;
+  is_target_lession: boolean;
+  classification: LesionClassification;
+  lesion_segments: string[];
 };
 
 export type LesionStats = {
@@ -32,7 +34,7 @@ export type LesionInfo = {
   classification: LesionClassification;
   behavior?: LesionBehavior;
   currentControl?: number;
-  controls: LesionControl[];
+  studySegments: StudySegments[];
   stats?: LesionStats;
   metadata?: {
     createdAt: string;

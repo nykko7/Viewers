@@ -50,18 +50,18 @@ export function SegmentRow({
     const primary = [];
     const secondary = [];
 
-    if (cachedStats?.volume) {
-      primary.push(`Volume: ${cachedStats.volume} ml`);
-    }
-    if (cachedStats?.diameter) {
-      primary.push(`Diameter: ${cachedStats.diameter} mm`);
-    }
-    if (cachedStats?.affected_organs) {
-      secondary.push(`Organ: ${cachedStats.affected_organs}`);
-    }
-    if (displayText) {
-      secondary.push(displayText);
-    }
+    // if (cachedStats?.volume) {
+    //   primary.push(`Volume: ${cachedStats.volume} ml`);
+    // }
+    // if (cachedStats?.diameter) {
+    //   primary.push(`Diameter: ${cachedStats.diameter} mm`);
+    // }
+    // if (cachedStats?.affected_organs) {
+    //   secondary.push(`Organ: ${cachedStats.affected_organs}`);
+    // }
+    // if (displayText) {
+    //   secondary.push(displayText);
+    // }
 
     return {
       primary,

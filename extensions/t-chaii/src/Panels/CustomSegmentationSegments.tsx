@@ -220,7 +220,7 @@ export const CustomSegmentationSegments: React.FC<{
   }
 
   const segmentCount = Object.keys(representationToUse.segments).length;
-  const height = mode === 'collapsed' ? 'h-[600px]' : `h-[${segmentCount * 200}px]`;
+  const height = mode === 'collapsed' ? 'h-[600px]' : `h-[${segmentCount * 600}px]`;
 
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [selectedSegmentIndex, setSelectedSegmentIndex] = useState<number | null>(null);
@@ -251,7 +251,7 @@ export const CustomSegmentationSegments: React.FC<{
       unit: 'mm',
     },
     affected_organs: {
-      label: 'Organ',
+      label: 'Organ(s)',
       unit: null,
     },
   };

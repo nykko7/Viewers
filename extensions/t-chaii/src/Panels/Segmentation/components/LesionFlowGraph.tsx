@@ -48,7 +48,8 @@ const CustomNode = ({ data, id }: NodeProps) => {
         isVisible={isHovered}
         position={Position.Bottom}
         offset={10}
-        className="bg-background border-input rounded-lg border p-4 text-white shadow-lg"
+        className="bg-background border-input z-99 rounded-lg border p-4 text-white shadow-lg"
+        style={{ zIndex: 999, overflow: 'visible' }}
       >
         <div className="space-y-1">
           <div className="text-center font-bold text-white">{nodeData.label}</div>

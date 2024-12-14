@@ -1,5 +1,6 @@
 import React from 'react';
 import { SegmentRow } from './SegmentRow';
+import { cn } from '@ohif/ui-next/lib/utils';
 
 type SegmentGroupProps = {
   title: string;
@@ -7,6 +8,7 @@ type SegmentGroupProps = {
     segment: any;
     segmentFromSegmentation: any;
   }>;
+  className?: string;
   segmentationId: string;
   disableEditing: boolean;
   representationType: string;
@@ -32,9 +34,10 @@ export function SegmentGroup({
   onSelect,
   onRename,
   onDelete,
+  className,
 }: SegmentGroupProps) {
   return (
-    <div className="mb-4">
+    <div className={cn('mb-4', className)}>
       <h3 className="text-primary-light p-2 text-lg font-semibold">{title}:</h3>
       {segments &&
         segments.length >= 0 &&

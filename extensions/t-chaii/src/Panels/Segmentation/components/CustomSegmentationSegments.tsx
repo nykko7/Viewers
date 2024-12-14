@@ -54,7 +54,7 @@ export function CustomSegmentationSegments({
 
   const segmentCount = Object.keys(representationToUse.segments || {}).length;
   // const height = mode === 'collapsed' ? 'h-[600px]' : `h-[${segmentCount * 200}px]`;
-  const height = mode === 'collapsed' ? 'h-[600px]' : `h-[540px]`;
+  const height = mode === 'collapsed' ? 'h-[600px]' : `h-[560px]`;
 
   const groupedSegments = useSegmentGroups(
     representationToUse.segments || {},
@@ -112,6 +112,7 @@ export function CustomSegmentationSegments({
           onSelect={onSegmentClick}
           onRename={onSegmentEdit}
           onDelete={onSegmentDelete}
+          className="mb-2"
         />
       </ScrollArea>
 

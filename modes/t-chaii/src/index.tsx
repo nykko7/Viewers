@@ -43,7 +43,7 @@ const unsubscriptions: Array<() => void> = [];
 function modeFactory({ modeConfiguration }) {
   return {
     id,
-    routeName: 't-chaii',
+    routeName: 'ai-segmentations',
     displayName: 'T-CHAII Mode',
 
     onModeEnter: async ({ servicesManager, extensionManager, commandsManager }: withAppTypes) => {
@@ -91,9 +91,13 @@ function modeFactory({ modeConfiguration }) {
           viewportData.data[viewportData.data.length - 1].displaySetInstanceUID
         );
 
-        if (!displaySet) return;
+        if (!displaySet) {
+          return;
+        }
 
-        if (displaySet.Modality !== 'SEG') return;
+        if (displaySet.Modality !== 'SEG') {
+          return;
+        }
 
         console.log('viewportId', viewportId);
         console.log('displaySet', displaySet);
@@ -124,7 +128,9 @@ function modeFactory({ modeConfiguration }) {
 
         const segmentation = segmentationService.getSegmentation(activeSegmentation.segmentationId);
 
-        if (!segmentation) return;
+        if (!segmentation) {
+          return;
+        }
 
         for (const [segmentIndex, segment] of Object.entries(segmentation.segments)) {
           const additionalStats = {

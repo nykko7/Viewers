@@ -1,10 +1,9 @@
 import React, { useState } from 'react';
-import { Button, ScrollArea } from '@ohif/ui-next';
+import { ScrollArea } from '@ohif/ui-next';
 import { useSegmentationTableContext } from '@ohif/ui-next';
 import { EditLesionDialog } from './EditLesionDialog';
 import { SegmentGroup } from './SegmentGroup';
 import { useSegmentGroups } from '../hooks/useSegmentGroups';
-import { SegmentRow } from './SegmentRow';
 import { cn } from '@ohif/ui-next/lib/utils';
 
 type CustomSegmentationSegmentsProps = {

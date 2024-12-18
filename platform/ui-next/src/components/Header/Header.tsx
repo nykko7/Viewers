@@ -46,7 +46,8 @@ function Header({
 
   const onClickReturn = () => {
     if (isReturnEnabled && onClickReturnButton) {
-      onClickReturnButton();
+      // onClickReturnButton();
+      window.location.href = `${process.env.TCHAI_CORE_URL}`;
     }
   };
 

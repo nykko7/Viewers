@@ -38,8 +38,6 @@ const StudyBrowser = ({
   const baselineStudy =
     customizationService.getModeCustomization('PanelStudyBrowser.baselineStudy')?.value || null;
 
-  console.log('baselineStudy', baselineStudy);
-
   const getTabContent = () => {
     const tabData = tabs.find(tab => tab.name === activeTabName);
     const viewPreset = viewPresets

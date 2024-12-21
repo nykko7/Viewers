@@ -58,3 +58,12 @@ export type SegmentStatsType = {
   diameter_change?: number;
   [key: string]: number | string | undefined;
 };
+
+export const affectedOrgansLabels = {
+  right_lung: 'Right lung',
+  left_lung: 'Left lung',
+  liver: 'Liver',
+  brain: 'Brain',
+  test: 'Test',
+  other: 'Other',
+};

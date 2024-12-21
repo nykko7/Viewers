@@ -1,5 +1,5 @@
 import React from 'react';
-import { SegmentStatsType as SegmentStatsType } from '../types';
+import { affectedOrgansLabels, SegmentStatsType } from '../../../types';
 
 type SegmentStatsProps = {
   stats: SegmentStatsType;
@@ -23,7 +23,9 @@ export function SegmentStats({ stats, showChangeValues = true }: SegmentStatsPro
   };
 
   const renderChangeValue = (change: number) => {
-    if (!showChangeValues) return null;
+    if (!showChangeValues) {
+      return null;
+    }
 
     if (change > 0) {
       return <span className="ml-2 text-red-500">(+{change}%)</span>;
@@ -44,7 +46,11 @@ export function SegmentStats({ stats, showChangeValues = true }: SegmentStatsPro
         >
           <span className="flex-1">{value.label}:</span>
           <span className="flex-1 font-bold">
-            {stats[key]} {value.unit}
+            {key === 'affected_organs'
+              ? affectedOrgansLabels[stats[key]]
+              : stats[key]
+                ? `${stats[key]} ${value.unit}`
+                : '--'}{' '}
             {stats[`${key}_change`] && renderChangeValue(stats[`${key}_change`] as number)}
           </span>
         </div>

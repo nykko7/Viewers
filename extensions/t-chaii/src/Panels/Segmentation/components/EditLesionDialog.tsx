@@ -24,7 +24,7 @@ import {
   AffectedOrgan,
   LesionType,
   LesionClassification,
-} from '../types';
+} from '../../../types';
 import { LesionFlowGraph } from './LesionFlowGraph';
 
 type EditLesionDialogProps = {
@@ -115,6 +115,7 @@ export function EditLesionDialog({
                 <SelectContent>
                   <SelectItem value="L1">Lesion 1</SelectItem>
                   <SelectItem value="L2">Lesion 2</SelectItem>
+                  <SelectItem value="L3">Lesion 3</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -147,6 +148,7 @@ export function EditLesionDialog({
                       <SelectItem value="Left lung">Left lung</SelectItem>
                       <SelectItem value="Liver">Liver</SelectItem>
                       <SelectItem value="Brain">Brain</SelectItem>
+                      <SelectItem value="test">test</SelectItem>
                     </SelectGroup>
                   </SelectContent>
                 </Select>

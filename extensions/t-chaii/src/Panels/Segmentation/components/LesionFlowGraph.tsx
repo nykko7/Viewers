@@ -12,7 +12,7 @@ import {
   NodeToolbar,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import { LesionInfo } from '../types';
+import { LesionInfo } from '../../../types';
 
 // Type for the node data only
 type LesionNodeData = {

@@ -88,52 +88,6 @@ export function CustomPanelSegmentation({
     };
   });
 
-  useEffect(() => {
-    const handleViewportChange = async (event: { viewportId: string }) => {
-      const { viewportId } = event;
-      if (!viewportId) return;
-
-      try {
-        const renderingEngine = getRenderingEngine('cornerstone');
-        const enabledElement = getEnabledElement(viewportId);
-
-        if (!renderingEngine || !enabledElement) {
-          // Clean up old viewport if it exists
-          if (renderingEngine) {
-            renderingEngine.disableElement(viewportId);
-          }
-
-          // Initialize new viewport
-          await commandsManager.run('initializeViewport', { viewportId });
-
-          // Enable the new viewport
-          const newRenderingEngine = getRenderingEngine('cornerstone');
-          if (newRenderingEngine) {
-            newRenderingEngine.enableElement(viewportId);
-          }
-        }
-      } catch (error) {
-        console.warn('Error handling viewport change:', error);
-      }
-    };
-
-    // Subscribe to viewport changes
-    const unsubscribe = viewportGridService.subscribe(
-      viewportGridService.EVENTS.ACTIVE_VIEWPORT_ID_CHANGED,
-      handleViewportChange
-    );
-
-    // Initialize current viewport
-    const currentViewportId = viewportGridService.getState().activeViewportId;
-    if (currentViewportId) {
-      handleViewportChange({ viewportId: currentViewportId });
-    }
-
-    return () => {
-      unsubscribe();
-    };
-  }, [viewportGridService, commandsManager]);
-
   const handleSaveChanges = () => {
     console.log('save changes');
   };

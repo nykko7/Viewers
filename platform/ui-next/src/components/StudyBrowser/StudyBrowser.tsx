@@ -33,6 +33,13 @@ const StudyBrowser = ({
   viewPresets,
   onThumbnailContextMenu,
 }: withAppTypes) => {
+  const customizationService = servicesManager.services.customizationService;
+
+  const baselineStudy =
+    customizationService.getModeCustomization('PanelStudyBrowser.baselineStudy')?.value || null;
+
+  console.log('baselineStudy', baselineStudy);
+
   const getTabContent = () => {
     const tabData = tabs.find(tab => tab.name === activeTabName);
     const viewPreset = viewPresets
@@ -40,12 +47,14 @@ const StudyBrowser = ({
       : 'thumbnails';
     return tabData.studies.map(
       ({ studyInstanceUid, date, description, numInstances, modalities, displaySets }) => {
+        const isBaselineStudy = baselineStudy?.study_id === studyInstanceUid;
+
         const isExpanded = expandedStudyInstanceUIDs.includes(studyInstanceUid);
         return (
           <React.Fragment key={studyInstanceUid}>
             <StudyItem
               date={date}
-              description={description}
+              description={isBaselineStudy ? 'Baseline' : description}
               numInstances={numInstances}
               isExpanded={isExpanded}
               displaySets={displaySets}

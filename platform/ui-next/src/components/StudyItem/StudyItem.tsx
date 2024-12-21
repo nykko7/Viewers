@@ -37,7 +37,7 @@ const StudyItem = ({
             <div className="flex w-full flex-row items-center justify-between">
               <div className="flex flex-col items-start text-[13px]">
                 <div className="text-white">{date}</div>
-                <div className="text-muted-foreground h-[18px] max-w-[160px] overflow-hidden truncate whitespace-nowrap">
+                <div className="text-muted-foreground h-[18px] max-w-[160px] overflow-hidden truncate whitespace-nowrap font-bold">
                   {description}
                 </div>
               </div>

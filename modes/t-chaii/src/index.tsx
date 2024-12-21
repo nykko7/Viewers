@@ -1,13 +1,10 @@
 import { hotkeys } from '@ohif/core';
-// import { triggerEvent } from '@cornerstonejs/core';
-import { Segment, Segmentation } from '@cornerstonejs/tools/types';
-import { getRenderingEngine } from '@cornerstonejs/core';
 import toolbarButtons from './toolbarButtons';
 import segmentationButtons from './segmentationButtons';
 import initToolGroups from './initToolGroups';
 import { id } from './id';
 import api from '../api';
-import { SegmentationRepresentations } from '@cornerstonejs/tools/enums';
+import { useSegmentationsStore } from 'extension-t-chaii/src/stores/useSegmentationsStore';
 
 const ohif = {
   layout: '@ohif/extension-default.layoutTemplateModule.viewerLayout',
@@ -55,7 +52,6 @@ function modeFactory({ modeConfiguration }) {
         segmentationService,
         cornerstoneViewportService,
         customizationService,
-        viewportGridService,
         hangingProtocolService,
       } = servicesManager.services;
 
@@ -83,88 +79,96 @@ function modeFactory({ modeConfiguration }) {
 
       toolbarService.createButtonSection('segmentationToolbox', ['BrushTools', 'Shapes']);
 
-      // Handle display sets added
+      // Get StudyInstanceUID from the URL
+      const searchParams = new URLSearchParams(window.location.search);
+      const studyInstanceUIDs = searchParams.get('StudyInstanceUIDs');
+
+      if (studyInstanceUIDs) {
+        try {
+          // Fetch segmentations for the study
+          const { studies } = await api.getStudySegmentations(studyInstanceUIDs);
+          useSegmentationsStore.getState().setStudies(studies);
+        } catch (error) {
+          console.warn('Error fetching segmentations:', error);
+        }
+      }
+
+      const baselineStudy = useSegmentationsStore.getState().getBaselineStudy();
+
+      customizationService.addModeCustomizations([
+        {
+          id: 'PanelStudyBrowser.baselineStudy',
+          value: baselineStudy,
+        },
+      ]);
+
+      // Handle viewport changes
       const onViewportChanged = async ({ viewportData, viewportId }) => {
-        console.log('onDisplaySetsAdded', viewportData);
-
-        const displaySet = displaySetService.getDisplaySetByUID(
-          viewportData.data[viewportData.data.length - 1].displaySetInstanceUID
-        );
-
-        if (!displaySet) {
+        if (!viewportData?.data?.length) {
           return;
         }
 
-        if (displaySet.Modality !== 'SEG') {
-          return;
-        }
-
-        console.log('viewportId', viewportId);
-        console.log('displaySet', displaySet);
-        console.log(
-          'displaySet.referencedDisplaySetInstanceUID',
-          displaySet.referencedDisplaySetInstanceUID
+        const displaySets = viewportData.data.map(data =>
+          displaySetService.getDisplaySetByUID(data.displaySetInstanceUID)
         );
 
-        const { segmentations_data } = await api.getSegmentations(displaySet.StudyInstanceUID);
-        console.log('segmentations_data', segmentations_data);
+        const segDisplaySet = displaySets.find(displaySet => displaySet?.Modality === 'SEG');
 
-        const segmentationsList = segmentationService.getSegmentations();
-        console.log('segmentationsList', segmentationsList);
+        if (!segDisplaySet) {
+          return;
+        }
 
         const activeSegmentation = segmentationService.getActiveSegmentation(viewportId);
-        console.log('activeSegmentation', activeSegmentation);
-
-        const labelmaps = segmentationService.getSegmentationRepresentations(viewportId, {
-          type: SegmentationRepresentations.Labelmap,
-        });
-
-        console.log('labelmaps', labelmaps);
-
-        const segmentationId = segmentations_data.find(
-          segmentation => segmentation.segmentation_id === activeSegmentation.segmentationId
-        );
-        // const segmentationId = '3e3c9031-0eaf-602a-5459-1f3e541a3a1a';
+        if (!activeSegmentation) {
+          return;
+        }
 
         const segmentation = segmentationService.getSegmentation(activeSegmentation.segmentationId);
-
         if (!segmentation) {
           return;
         }
 
-        for (const [segmentIndex, segment] of Object.entries(segmentation.segments)) {
-          const additionalStats = {
-            diameter: 0, // mm
-            volume: 0, // mm3
-            affected_organs: 'Unknown',
-          };
-
-          // Update the segment's cached stats
-          const updatedSegment: Segment = {
-            ...segment,
-            cachedStats: {
-              ...segment.cachedStats,
-              ...additionalStats,
-            },
-          };
-
-          segmentation.segments[segmentIndex] = updatedSegment;
-        }
-
-        // Update the segmentation object
-        const updatedSegmentation: Segmentation = {
-          ...segmentation,
-          segments: {
-            ...segmentation.segments,
-          },
+        segmentation.cachedStats = {
+          ...segmentation.cachedStats,
+          studies: useSegmentationsStore.getState().getStudies(),
         };
 
-        // Update the segmentation in the service
+        // Update segments with info from store
+        const updatedSegments = { ...segmentation.segments };
+
+        for (const [segmentIndex, segment] of Object.entries(segmentation.segments)) {
+          const segmentInfo = useSegmentationsStore
+            .getState()
+            .getSegmentInfoBySeriesAndLabel(
+              segDisplaySet.referencedSeriesInstanceUID,
+              segment.label
+            );
+          console.log(segmentInfo);
+
+          if (segmentInfo) {
+            updatedSegments[segmentIndex] = {
+              ...segment,
+              cachedStats: {
+                ...segment.cachedStats,
+                id: segmentInfo.id,
+                volume: segmentInfo.volume,
+                diameter: segmentInfo.axial_diameter,
+                affected_organs: segmentInfo.affected_organs,
+              },
+            };
+          }
+        }
+
+        // Update the segmentation with new segment data
+        const updatedSegmentation = {
+          ...segmentation,
+          segments: updatedSegments,
+        };
+
         segmentationService.addOrUpdateSegmentation(updatedSegmentation);
       };
 
-      // Subscribe to display sets added event
-
+      // Subscribe to viewport changes
       const displaySetsAddedUnsubscribe = cornerstoneViewportService.subscribe(
         cornerstoneViewportService.EVENTS.VIEWPORT_DATA_CHANGED,
         onViewportChanged
@@ -199,6 +203,9 @@ function modeFactory({ modeConfiguration }) {
       syncGroupService.destroy();
       segmentationService.destroy();
       cornerstoneViewportService.destroy();
+
+      // Clear the segmentations store
+      useSegmentationsStore.getState().clearStore();
     },
 
     validationTags: {

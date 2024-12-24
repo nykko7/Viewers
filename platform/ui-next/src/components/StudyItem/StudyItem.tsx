@@ -20,6 +20,7 @@ const StudyItem = ({
   onClickUntrack,
   viewPreset = 'thumbnails',
   onThumbnailContextMenu,
+  isBaselineStudy,
 }: withAppTypes) => {
   return (
     <Accordion
@@ -38,7 +39,7 @@ const StudyItem = ({
               <div className="flex flex-col items-start text-[13px]">
                 <div className="text-white">{date}</div>
                 <div className="text-muted-foreground h-[18px] max-w-[160px] overflow-hidden truncate whitespace-nowrap font-bold">
-                  {description}
+                  {isBaselineStudy ? 'Baseline' : description}
                 </div>
               </div>
               <div className="text-muted-foreground mr-2 flex flex-col items-end text-[12px]">

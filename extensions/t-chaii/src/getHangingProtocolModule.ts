@@ -13,6 +13,30 @@ const defaultProtocol = {
     //   },
     // },
   ],
+  // defaultViewport: {
+  //   viewportOptions: {
+  //     viewportType: 'stack',
+  //     toolGroupId: 'default',
+  //     allowUnmatchedView: true,
+  //     syncGroups: [
+  //       {
+  //         type: 'hydrateseg',
+  //         id: 'sameFORId',
+  //         source: true,
+  //         target: true,
+  //         // options: {
+  //         //   matchingRules: ['sameFOR'],
+  //         // },
+  //       },
+  //     ],
+  //   },
+  //   displaySets: [
+  //     {
+  //       id: 'segDisplaySet',
+  //       matchedDisplaySetsIndex: -1,
+  //     },
+  //   ],
+  // },
   toolGroupIds: ['default'],
   displaySetSelectors: {
     ctDisplaySet: {
@@ -52,8 +76,8 @@ const defaultProtocol = {
       viewports: [
         {
           viewportOptions: {
-            viewportType: 'stack',
-            toolGroupId: 'default',
+            // viewportType: 'stack',
+            // toolGroupId: 'default',
             allowUnmatchedView: true,
             // syncGroups: [
             //   {
@@ -63,6 +87,17 @@ const defaultProtocol = {
             //     target: true,
             //   },
             // ],
+            syncGroups: [
+              {
+                type: 'hydrateseg',
+                id: 'sameFORId',
+                source: true,
+                target: true,
+                // options: {
+                //   matchingRules: ['sameFOR'],
+                // },
+              },
+            ],
           },
           displaySets: [
             {

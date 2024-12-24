@@ -52,7 +52,7 @@ const StudyBrowser = ({
           <React.Fragment key={studyInstanceUid}>
             <StudyItem
               date={date}
-              description={isBaselineStudy ? 'Baseline' : description}
+              description={description}
               numInstances={numInstances}
               isExpanded={isExpanded}
               displaySets={displaySets}
@@ -69,6 +69,7 @@ const StudyBrowser = ({
               data-cy="thumbnail-list"
               viewPreset={viewPreset}
               onThumbnailContextMenu={onThumbnailContextMenu}
+              isBaselineStudy={isBaselineStudy}
             />
           </React.Fragment>
         );

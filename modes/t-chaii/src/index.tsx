@@ -108,6 +108,13 @@ function modeFactory({ modeConfiguration }) {
           return;
         }
 
+        console.log('Viewport data:', viewportData);
+
+        console.log(
+          'displaySets:',
+          displaySetService.getDisplaySetByUID(viewportData.data[0].displaySetInstanceUID)
+        );
+
         const displaySets = viewportData.data.map(data =>
           displaySetService.getDisplaySetByUID(data.displaySetInstanceUID)
         );

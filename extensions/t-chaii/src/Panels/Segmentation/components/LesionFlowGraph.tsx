@@ -12,25 +12,23 @@ import {
   NodeToolbar,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import { LesionInfo } from '../../../types';
+import type { Study, Segment } from '../../../types';
 
-// Type for the node data only
 type LesionNodeData = {
   label: string;
-  created_at: string;
-  updated_at: string;
-  name: string;
-  axial_diameter: number;
-  coronal_diameter: number;
-  sagittal_diameter: number;
+  segmentId: string;
+  studyDate: string;
   volume: number;
-  max_diameter: number;
+  axialDiameter: number | null;
+  coronalDiameter: number | null;
+  sagittalDiameter: number | null;
+  affectedOrgans: string;
+  classification: string;
+  lesionType: string;
   isCurrent: boolean;
   isSelected: boolean;
-  type: 'maintained' | 'joined' | 'separated';
 };
 
-// Complete node type extending Node
 type LesionNode = Node<LesionNodeData>;
 
 const CustomNode = ({ data, id }: NodeProps) => {
@@ -39,8 +37,13 @@ const CustomNode = ({ data, id }: NodeProps) => {
 
   const bgColor = nodeData.isCurrent && nodeData.isSelected ? 'rgb(37, 99, 235)' : 'white';
   const textColor = nodeData.isCurrent && nodeData.isSelected ? 'white' : 'black';
-  // make the border
   const borderColor = nodeData.isSelected ? 'rgb(37, 99, 235)' : 'rgb(156, 163, 175)';
+
+  const maxDiameter = Math.max(
+    nodeData.axialDiameter || 0,
+    nodeData.coronalDiameter || 0,
+    nodeData.sagittalDiameter || 0
+  );
 
   return (
     <>
@@ -60,7 +63,10 @@ const CustomNode = ({ data, id }: NodeProps) => {
             </span>
           </div>
           <div className="text-gray-200">
-            Diameter: <span className="font-bold">{nodeData.max_diameter}mm</span>
+            Max Diameter: <span className="font-bold">{maxDiameter}mm</span>
+          </div>
+          <div className="text-gray-200">
+            Classification: <span className="font-bold">{nodeData.classification}</span>
           </div>
         </div>
       </NodeToolbar>
@@ -87,116 +93,159 @@ const nodeTypes: NodeTypes = {
 };
 
 type LesionFlowGraphProps = {
-  type: 'maintained' | 'joined' | 'separated';
-  currentControl: number;
-  selectedLesionId?: string;
-  onLesionSelect?: (lesionId: string) => void;
-  lesionInfo?: LesionInfo;
+  studies: Study[];
+  currentStudyId: string;
+  selectedSegmentId?: string;
+  onSegmentSelect?: (segmentId: string) => void;
 };
 
 export function LesionFlowGraph({
-  type,
-  currentControl,
-  selectedLesionId,
-  onLesionSelect,
-  lesionInfo,
+  studies,
+  currentStudyId,
+  selectedSegmentId,
+  onSegmentSelect,
 }: LesionFlowGraphProps) {
   const getNodesAndEdges = useCallback(() => {
     const nodes: Node<LesionNodeData>[] = [];
     const edges: Edge[] = [];
+    const nodeMap = new Map<string, { studyId: string; segment: Segment }>();
 
-    // Use actual studies from lesionInfo if available
-    const studies = lesionInfo?.studySegments || [];
+    console.log('Initial data:', {
+      studies,
+      currentStudyId,
+      selectedSegmentId,
+    });
 
-    // Define lesions based on the type
-    const lesions = [
-      {
-        id: 'L1',
-        studies: studies.map(study => ({
-          created_at: study.created_at,
-          updated_at: study.updated_at,
-          name: study.name,
-          axial_diameter: study.axial_diameter,
-          coronal_diameter: study.coronal_diameter,
-          sagittal_diameter: study.sagittal_diameter,
-          volume: study.volume,
-          max_diameter: Math.max(study.coronal_diameter, study.sagittal_diameter),
-        })),
-      },
-      {
-        id: 'L2',
-        studies: studies.map(study => ({
-          created_at: study.created_at,
-          updated_at: study.updated_at,
-          name: study.name,
-          axial_diameter: study.axial_diameter,
-          coronal_diameter: study.coronal_diameter,
-          sagittal_diameter: study.sagittal_diameter,
-          volume: study.volume,
-          max_diameter: Math.max(study.coronal_diameter, study.sagittal_diameter),
-        })),
-      },
-      {
-        id: 'L3',
-        studies: studies.map(study => ({
-          created_at: study.created_at,
-          updated_at: study.updated_at,
-          name: study.name,
-          axial_diameter: study.axial_diameter,
-          coronal_diameter: study.coronal_diameter,
-          sagittal_diameter: study.sagittal_diameter,
-          volume: study.volume,
-          max_diameter: Math.max(study.coronal_diameter, study.sagittal_diameter),
-        })),
-      },
-    ];
+    // Sort studies by date
+    const sortedStudies = [...studies].sort(
+      (a, b) => new Date(a.study_date).getTime() - new Date(b.study_date).getTime()
+    );
 
-    lesions.forEach((lesion, lesionIndex) => {
-      const xOffset = lesionIndex * 150;
+    console.log(
+      'Sorted studies:',
+      sortedStudies.map(s => ({
+        study_id: s.study_id,
+        date: s.study_date,
+      }))
+    );
 
-      lesion.studies.forEach((study, i) => {
-        nodes.push({
-          id: `${lesion.id}-${i}`,
-          type: 'lesion',
-          position: { x: xOffset, y: i * 100 },
-          data: {
-            label: lesion.id,
-            created_at: study.created_at,
-            updated_at: study.updated_at,
-            name: study.name,
-            axial_diameter: study.axial_diameter,
-            coronal_diameter: study.coronal_diameter,
-            sagittal_diameter: study.sagittal_diameter,
-            volume: study.volume,
-            max_diameter: Math.max(study.coronal_diameter, study.sagittal_diameter),
-            isCurrent: i === currentControl,
-            isSelected: lesion.id === selectedLesionId,
-            type: 'maintained',
-          },
-        });
+    // First pass: create nodes and build nodeMap
+    sortedStudies.forEach((study, studyIndex) => {
+      const yOffset = studyIndex * 150;
 
-        if (i > 0) {
-          edges.push({
-            id: `e${lesion.id}-${i}`,
-            source: `${lesion.id}-${i - 1}`,
-            target: `${lesion.id}-${i}`,
-            type: 'smoothstep',
-            style: {
-              stroke: lesion.id === selectedLesionId ? '#3b82f6' : '#9ca3af',
-            },
+      study.series.forEach(series => {
+        series.segmentations.forEach(segmentation => {
+          console.log('Processing segmentation:', {
+            segmentation_id: segmentation.segmentation_id,
+            segments: segmentation.segments,
           });
-        }
+
+          segmentation.segments.forEach((segment, segmentIndex) => {
+            const xOffset = segmentIndex * 150;
+
+            // Store segment in map for edge creation
+            nodeMap.set(segment.id, { studyId: study.study_id, segment });
+
+            const node = {
+              id: `${study.study_id}-${segment.id}`,
+              type: 'lesion',
+              position: { x: xOffset, y: yOffset },
+              data: {
+                label: segment.label,
+                segmentId: segment.id,
+                studyDate: study.study_date,
+                volume: segment.volume,
+                axialDiameter: segment.axial_diameter,
+                coronalDiameter: segment.coronal_diameter,
+                sagittalDiameter: segment.sagittal_diameter,
+                affectedOrgans: segment.affected_organs,
+                classification: segment.lession_classification,
+                lesionType: segment.lession_type,
+                isCurrent: study.study_id === currentStudyId,
+                isSelected: segment.id === selectedSegmentId,
+              },
+            };
+
+            console.log('Created node:', {
+              nodeId: node.id,
+              segmentId: segment.id,
+              lesion_segments: segment.lesion_segments,
+            });
+
+            nodes.push(node);
+          });
+        });
       });
     });
 
+    console.log(
+      'NodeMap after first pass:',
+      Array.from(nodeMap.entries()).map(([key, value]) => ({
+        segmentId: key,
+        studyId: value.studyId,
+        lesion_segments: value.segment.lesion_segments,
+      }))
+    );
+
+    // Second pass: create edges based on lesion_segments
+    nodeMap.forEach(({ studyId, segment }) => {
+      if (segment.lesion_segments && segment.lesion_segments.length > 0) {
+        console.log('Creating edges for segment:', {
+          sourceId: segment.id,
+          studyId,
+          lesion_segments: segment.lesion_segments,
+        });
+
+        segment.lesion_segments.forEach(targetSegmentId => {
+          const targetNode = nodeMap.get(targetSegmentId);
+          if (targetNode) {
+            const edge = {
+              id: `e${segment.id}-${targetSegmentId}`,
+              source: `${studyId}-${segment.id}`,
+              target: `${targetNode.studyId}-${targetSegmentId}`,
+              type: 'smoothstep',
+              animated: true,
+              style: {
+                stroke: segment.id === selectedSegmentId ? '#3b82f6' : '#9ca3af',
+                strokeWidth: 2,
+              },
+            };
+
+            console.log('Created edge:', {
+              edgeId: edge.id,
+              source: edge.source,
+              target: edge.target,
+            });
+
+            edges.push(edge);
+          } else {
+            console.warn('Target segment not found:', {
+              sourceSegmentId: segment.id,
+              targetSegmentId,
+            });
+          }
+        });
+      }
+    });
+
+    console.log('Final graph data:', {
+      nodes: nodes.length,
+      edges: edges.length,
+      nodeDetails: nodes.map(n => ({
+        id: n.id,
+        label: n.data.label,
+        segmentId: n.data.segmentId,
+      })),
+      edgeDetails: edges,
+    });
+
     return { nodes, edges };
-  }, [type, currentControl, selectedLesionId, lesionInfo]);
+  }, [studies, currentStudyId, selectedSegmentId]);
 
   const { nodes, edges } = getNodesAndEdges();
 
   const handleNodeClick = (event: React.MouseEvent, node: LesionNode) => {
-    const lesionId = node.data.label;
-    onLesionSelect?.(lesionId);
+    onSegmentSelect?.(node.data.segmentId);
   };
 
   return (

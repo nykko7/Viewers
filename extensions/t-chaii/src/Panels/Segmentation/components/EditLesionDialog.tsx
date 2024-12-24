@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Button,
   Input,
@@ -17,85 +17,72 @@ import {
   TooltipProvider,
   DialogDescription,
 } from '@ohif/ui-next';
-
-import {
-  LesionInfo,
-  StudySegments,
-  AffectedOrgan,
-  LesionType,
-  LesionClassification,
-} from '../../../types';
 import { LesionFlowGraph } from './LesionFlowGraph';
+import { useSegmentationTableContext } from '@ohif/ui-next';
+import type { Study, Segment } from '../../../types';
 
 type EditLesionDialogProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   segmentIndex: number;
-  initialData?: Partial<LesionInfo>;
-  onSave?: (data: LesionInfo) => void;
 };
 
-const DEFAULT_STUDY_SEGMENTS: StudySegments[] = [
-  {
-    created_at: '01/08/2024',
-    updated_at: '01/08/2024',
-    volume: 100,
-    name: 'Study 1',
-    axial_diameter: 5,
-    coronal_diameter: 8,
-    sagittal_diameter: 8,
-    is_target_lession: true,
-    classification: 'Target',
-    lesion_segments: ['L1', 'L2', 'L3'],
-  },
-  {
-    created_at: '01/08/2024',
-    updated_at: '01/08/2024',
-    volume: 100,
-    name: 'Study 2',
-    axial_diameter: 5,
-    coronal_diameter: 8,
-    sagittal_diameter: 8,
-    is_target_lession: true,
-    classification: 'Target',
-    lesion_segments: ['L1', 'L2', 'L3'],
-  },
-  {
-    created_at: '01/08/2024',
-    updated_at: '01/08/2024',
-    volume: 100,
-    name: 'Study 3',
-    axial_diameter: 5,
-    coronal_diameter: 8,
-    sagittal_diameter: 8,
-    is_target_lession: true,
-    classification: 'Target',
-    lesion_segments: ['L1', 'L2', 'L3'],
-  },
-  // ... add more default controls if needed
-];
+export function EditLesionDialog({ open, onOpenChange, segmentIndex }: EditLesionDialogProps) {
+  const { data, activeSegmentationId } = useSegmentationTableContext('SegmentationTable.Segments');
+  const [selectedSegmentId, setSelectedSegmentId] = useState<string | null>(null);
 
-export function EditLesionDialog({
-  open,
-  onOpenChange,
-  segmentIndex,
-  initialData,
-  onSave,
-}: EditLesionDialogProps) {
-  const [formData, setFormData] = useState<LesionInfo>({
-    name: initialData?.name ?? `Lesion ${segmentIndex + 1}`,
-    organ: initialData?.organ ?? 'Right lung',
-    type: initialData?.type ?? 'Lymph node',
-    classification: initialData?.classification ?? 'Target',
-    studySegments: initialData?.studySegments ?? DEFAULT_STUDY_SEGMENTS,
+  const activeSegmentation = data.find(
+    item => item.segmentation.segmentationId === activeSegmentationId
+  );
+  const currentSegment = activeSegmentation?.segmentation.segments[segmentIndex];
+
+  // Transform studies object into array
+  const studies = React.useMemo(() => {
+    const studiesObj = activeSegmentation?.segmentation.cachedStats?.studies;
+    if (!studiesObj || typeof studiesObj !== 'object') {
+      return [];
+    }
+
+    return Object.entries(studiesObj).map(([studyInstanceUID, study]) => ({
+      study_id: studyInstanceUID,
+      ...study,
+    }));
+  }, [activeSegmentation?.segmentation.cachedStats?.studies]);
+
+  console.log('Transformed studies:', {
+    rawStudies: activeSegmentation?.segmentation.cachedStats?.studies,
+    transformedStudies: studies,
   });
 
-  const [selectedLesionId, setSelectedLesionId] = useState('L1');
+  useEffect(() => {
+    if (currentSegment) {
+      setSelectedSegmentId(currentSegment.id);
+    }
+  }, [currentSegment]);
 
   const handleConfirm = () => {
-    onSave?.(formData);
     onOpenChange(false);
   };
+
+  if (!currentSegment || !activeSegmentation) {
+    return null;
+  }
+
+  const currentStudyId =
+    studies.length > 0
+      ? studies.find(study =>
+          study.series?.some(series =>
+            series.segmentations?.some(seg => seg.segmentation_id === activeSegmentationId)
+          )
+        )?.study_id
+      : undefined;
+
+  console.log({
+    studies,
+    currentStudyId,
+    cachedStats: activeSegmentation?.segmentation.cachedStats,
+    currentSegment,
+  });
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -104,51 +91,31 @@ export function EditLesionDialog({
           <DialogHeader>
             <DialogTitle className="text-primary-light">Lesion Information</DialogTitle>
             <DialogDescription>
-              Select the lesion to edit and update the information below.
+              View and edit lesion information and relationships
             </DialogDescription>
-            <div className="mt-4">
-              <Label>Select Lesion:</Label>
-              <Select value={selectedLesionId} onValueChange={setSelectedLesionId}>
-                <SelectTrigger className="w-[200px]">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="L1">Lesion 1</SelectItem>
-                  <SelectItem value="L2">Lesion 2</SelectItem>
-                  <SelectItem value="L3">Lesion 3</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
           </DialogHeader>
 
           <div className="grid grid-cols-2 gap-8">
             <div className="space-y-4">
               <div className="space-y-2">
                 <Label>Name:</Label>
-                <Input
-                  value={formData.name}
-                  onChange={e => setFormData(prev => ({ ...prev, name: e.target.value }))}
-                />
+                <Input value={currentSegment.label || ''} readOnly />
               </div>
 
               <div className="space-y-2">
                 <Label>Affected Organ:</Label>
-                <Select
-                  value={formData.organ}
-                  onValueChange={value =>
-                    setFormData(prev => ({ ...prev, organ: value as AffectedOrgan }))
-                  }
-                >
+                <Select value={currentSegment.cachedStats.affected_organs || 'other'}>
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectGroup>
-                      <SelectItem value="Right lung">Right lung</SelectItem>
-                      <SelectItem value="Left lung">Left lung</SelectItem>
-                      <SelectItem value="Liver">Liver</SelectItem>
-                      <SelectItem value="Brain">Brain</SelectItem>
-                      <SelectItem value="test">test</SelectItem>
+                      <SelectItem value="right_lung">Right lung</SelectItem>
+                      <SelectItem value="left_lung">Left lung</SelectItem>
+                      <SelectItem value="liver">Liver</SelectItem>
+                      <SelectItem value="brain">Brain</SelectItem>
+                      <SelectItem value="test">Test</SelectItem>
+                      <SelectItem value="other">Other</SelectItem>
                     </SelectGroup>
                   </SelectContent>
                 </Select>
@@ -156,21 +123,16 @@ export function EditLesionDialog({
 
               <div className="space-y-2">
                 <Label>Type:</Label>
-                <Select
-                  value={formData.type}
-                  onValueChange={value =>
-                    setFormData(prev => ({ ...prev, type: value as LesionType }))
-                  }
-                >
+                <Select value={currentSegment.cachedStats.lesion_type || 'mass'}>
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectGroup>
-                      <SelectItem value="Lymph node">Lymph node</SelectItem>
-                      <SelectItem value="Tumor">Tumor</SelectItem>
-                      <SelectItem value="Mass">Mass</SelectItem>
-                      <SelectItem value="Nodule">Nodule</SelectItem>
+                      <SelectItem value="mass">Mass</SelectItem>
+                      <SelectItem value="lymph_node">Lymph Node</SelectItem>
+                      <SelectItem value="metastasis">Metastasis</SelectItem>
+                      <SelectItem value="other">Other</SelectItem>
                     </SelectGroup>
                   </SelectContent>
                 </Select>
@@ -178,59 +140,39 @@ export function EditLesionDialog({
 
               <div className="space-y-2">
                 <Label>Classification:</Label>
-                <Select
-                  value={formData.classification}
-                  onValueChange={value =>
-                    setFormData(prev => ({
-                      ...prev,
-                      classification: value as LesionClassification,
-                    }))
-                  }
-                >
+                <Select value={currentSegment.cachedStats.lesion_classification || 'target'}>
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectGroup>
-                      <SelectItem value="Target">Target</SelectItem>
-                      <SelectItem value="Non-Target">Non-Target</SelectItem>
-                      <SelectItem value="New Lesion">New Lesion</SelectItem>
+                      <SelectItem value="target">Target</SelectItem>
+                      <SelectItem value="non-target">Non-Target</SelectItem>
+                      <SelectItem value="new-lesion">New Lesion</SelectItem>
                     </SelectGroup>
                   </SelectContent>
                 </Select>
               </div>
 
               <div className="space-y-2">
-                <Label>Lesion Follow-up:</Label>
+                <Label>Measurements:</Label>
                 <div className="overflow-hidden rounded border">
                   <div className="min-w-full divide-y divide-gray-200">
                     <div className="bg-secondary-dark border-secondary-light">
                       <div className="text-secondary-foreground grid grid-cols-4 gap-4 px-4 py-3 text-sm font-semibold">
-                        <div>Study Date</div>
-                        <div>
-                          Volume (cm<sup>3</sup>)
-                        </div>
-                        <div>Major Axial Diameter (mm)</div>
-                        <div>Major Diameter (mm)</div>
+                        <div>Volume (mm³)</div>
+                        <div>Axial Diameter (mm)</div>
+                        <div>Coronal Diameter (mm)</div>
+                        <div>Sagittal Diameter (mm)</div>
                       </div>
                     </div>
                     <div className="divide-y divide-gray-200">
-                      {formData.studySegments.map((studySegment, index) => (
-                        <div
-                          key={index}
-                          className="text-secondary-foreground grid grid-cols-4 gap-4 px-4 py-3 text-sm"
-                        >
-                          <div>{studySegment.created_at}</div>
-                          <div>{studySegment.volume}</div>
-                          <div>{studySegment.axial_diameter}</div>
-                          <div>
-                            {Math.max(
-                              studySegment.coronal_diameter,
-                              studySegment.sagittal_diameter
-                            )}
-                          </div>
-                        </div>
-                      ))}
+                      <div className="text-secondary-foreground grid grid-cols-4 gap-4 px-4 py-3 text-sm">
+                        <div>{currentSegment.cachedStats.volume || '--'}</div>
+                        <div>{currentSegment.cachedStats.axial_diameter || '--'}</div>
+                        <div>{currentSegment.cachedStats.coronal_diameter || '--'}</div>
+                        <div>{currentSegment.cachedStats.sagittal_diameter || '--'}</div>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -238,14 +180,13 @@ export function EditLesionDialog({
             </div>
 
             <div className="space-y-2 border-l pl-4">
-              <Label>Lesion Follow-up Graph:</Label>
+              <Label>Lesion Relationships:</Label>
               <div className="border-input rounded-lg border">
                 <LesionFlowGraph
-                  type="separated"
-                  currentControl={2}
-                  selectedLesionId={selectedLesionId}
-                  onLesionSelect={setSelectedLesionId}
-                  lesionInfo={formData}
+                  studies={studies}
+                  currentStudyId={currentStudyId || ''}
+                  selectedSegmentId={selectedSegmentId}
+                  onSegmentSelect={setSelectedSegmentId}
                 />
               </div>
             </div>

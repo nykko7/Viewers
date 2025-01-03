@@ -4,6 +4,7 @@ import classnames from 'classnames';
 import { ThumbnailList } from '../ThumbnailList';
 
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '../Accordion';
+import { Home } from 'lucide-react';
 
 const StudyItem = ({
   date,
@@ -38,8 +39,16 @@ const StudyItem = ({
             <div className="flex w-full flex-row items-center justify-between">
               <div className="flex flex-col items-start text-[13px]">
                 <div className="text-white">{date}</div>
-                <div className="text-muted-foreground h-[18px] max-w-[160px] overflow-hidden truncate whitespace-nowrap font-bold">
-                  {isBaselineStudy ? 'Baseline' : description}
+                <div className="text-primary-light max-w-[160px] overflow-hidden truncate whitespace-nowrap font-bold">
+                  {isBaselineStudy ? (
+                    // <div className="flex flex-row items-center gap-1">
+                    <div className="focus:ring-ring bg-primary-light inline-flex flex-row items-center justify-center gap-1 rounded-md border border-transparent px-1.5 text-xs font-semibold text-black opacity-100 shadow transition-opacity hover:opacity-80 focus:outline-none focus:ring-2 focus:ring-offset-2">
+                      <Home size={12} />
+                      <span>Baseline</span>
+                    </div>
+                  ) : (
+                    description?.toString()
+                  )}
                 </div>
               </div>
               <div className="text-muted-foreground mr-2 flex flex-col items-end text-[12px]">

@@ -27,70 +27,92 @@ type LesionNodeData = {
   lesionType: string;
   isCurrent: boolean;
   isSelected: boolean;
+  isRelated: boolean;
 };
 
 type LesionNode = Node<LesionNodeData>;
 
+// Add utility function to format segment label
+const formatSegmentLabel = (label: string): string => {
+  const match = label.match(/Segment #(\d+)/);
+  return match ? `S${match[1]}` : label;
+};
+
+// Update CustomNode component
 const CustomNode = ({ data, id }: NodeProps) => {
-  const nodeData = data as LesionNodeData;
   const [isHovered, setIsHovered] = useState(false);
+  const nodeData = data as LesionNodeData;
 
-  const bgColor = nodeData.isCurrent && nodeData.isSelected ? 'rgb(37, 99, 235)' : 'white';
-  const textColor = nodeData.isCurrent && nodeData.isSelected ? 'white' : 'black';
-  const borderColor = nodeData.isSelected ? 'rgb(37, 99, 235)' : 'rgb(156, 163, 175)';
+  const getBorderColor = () => {
+    if (nodeData.isSelected) {
+      return 'rgb(37, 99, 235)';
+    }
+    if (nodeData.isRelated) {
+      return 'rgb(59, 130, 246)';
+    }
+    return 'rgb(156, 163, 175)';
+  };
 
-  const maxDiameter = Math.max(
-    nodeData.axialDiameter || 0,
-    nodeData.coronalDiameter || 0,
-    nodeData.sagittalDiameter || 0
-  );
+  const getBackgroundColor = () => {
+    if (nodeData.isSelected) {
+      return 'rgb(37, 99, 235)';
+    }
+    if (nodeData.isRelated) {
+      return 'rgb(191, 219, 254)';
+    }
+    return 'white';
+  };
+
+  const getTextColor = () => {
+    if (nodeData.isSelected) {
+      return 'white';
+    }
+    return 'black';
+  };
 
   return (
     <>
       <NodeToolbar
         isVisible={isHovered}
-        position={Position.Bottom}
+        position={Position.Top}
         offset={10}
-        className="bg-background border-input z-99 rounded-lg border p-4 text-white shadow-lg"
-        style={{ zIndex: 999, overflow: 'visible' }}
+        className="rounded-lg border bg-gray-900 p-4 text-white shadow-lg"
       >
         <div className="space-y-1">
-          <div className="text-center font-bold text-white">{nodeData.label}</div>
-          <div className="text-gray-200">
-            Volume:{' '}
-            <span className="font-bold">
-              {nodeData.volume}mm<sup>3</sup>
-            </span>
+          <div className="text-center font-bold">{nodeData.label}</div>
+          <div className="text-sm">
+            Volume: {nodeData.volume}mm<sup>3</sup>
           </div>
-          <div className="text-gray-200">
-            Max Diameter: <span className="font-bold">{maxDiameter}mm</span>
-          </div>
-          <div className="text-gray-200">
-            Classification: <span className="font-bold">{nodeData.classification}</span>
-          </div>
+          <div className="text-sm">Date: {new Date(nodeData.studyDate).toLocaleDateString()}</div>
+          <div className="text-sm">Type: {nodeData.classification}</div>
         </div>
       </NodeToolbar>
 
       <div
-        className="flex h-12 w-12 cursor-pointer items-center justify-center rounded-full border-4 transition-all duration-200 hover:scale-110"
+        className="flex h-12 w-12 cursor-pointer items-center justify-center rounded-full border-[4px] transition-all duration-200 hover:scale-110"
         style={{
-          background: bgColor,
-          borderColor: borderColor,
+          background: getBackgroundColor(),
+          borderColor: getBorderColor(),
+          color: nodeData.isSelected ? 'white' : 'black',
+          boxShadow: nodeData.isRelated ? '0 0 0 2px rgba(59, 130, 246, 0.3)' : 'none',
         }}
         onMouseEnter={() => setIsHovered(true)}
         onMouseLeave={() => setIsHovered(false)}
       >
-        <Handle type="target" position={Position.Top} style={{ background: 'transparent' }} />
-        <div className={`text-sm font-bold text-${textColor}`}>{nodeData.label}</div>
-        <Handle type="source" position={Position.Bottom} style={{ background: 'transparent' }} />
+        <Handle type="target" position={Position.Top} />
+        <div className="text-sm font-bold">{formatSegmentLabel(nodeData.label)}</div>
+        <Handle type="source" position={Position.Bottom} />
       </div>
     </>
   );
 };
 
-const nodeTypes: NodeTypes = {
-  lesion: CustomNode,
-};
+// Update StudyDateLabel component
+const StudyDateLabel = ({ data }: NodeProps) => (
+  <div className="rounded bg-gray-800 px-3 py-1 text-center text-xs text-gray-300">
+    {new Date(data.date).toLocaleDateString()}
+  </div>
+);
 
 type LesionFlowGraphProps = {
   studies: Study[];
@@ -108,48 +130,141 @@ export function LesionFlowGraph({
   const getNodesAndEdges = useCallback(() => {
     const nodes: Node<LesionNodeData>[] = [];
     const edges: Edge[] = [];
-    const nodeMap = new Map<string, { studyId: string; segment: Segment }>();
-
-    console.log('Initial data:', {
-      studies,
-      currentStudyId,
-      selectedSegmentId,
-    });
+    const nodeMap = new Map<
+      string,
+      { studyId: string; segment: Segment; position: { x: number; y: number } }
+    >();
 
     // Sort studies by date
     const sortedStudies = [...studies].sort(
       (a, b) => new Date(a.study_date).getTime() - new Date(b.study_date).getTime()
     );
 
-    console.log(
-      'Sorted studies:',
-      sortedStudies.map(s => ({
-        study_id: s.study_id,
-        date: s.study_date,
-      }))
-    );
+    // Calculate layout dimensions
+    const VERTICAL_SPACING = 120;
+    const HORIZONTAL_SPACING = 100;
+    const DATE_OFFSET = 50; // Increased offset for dates
+    const START_Y = 80; // Increased starting Y to accommodate dates
 
-    // First pass: create nodes and build nodeMap
+    // First pass: count segments per study to calculate center position
+    const studySegmentCounts = new Map<string, number>();
+    sortedStudies.forEach(study => {
+      let count = 0;
+      study.series.forEach(series => {
+        series.segmentations.forEach(segmentation => {
+          count += segmentation.segments.length;
+        });
+      });
+      studySegmentCounts.set(study.study_id, count);
+    });
+
+    // Build a map of all connected segments (both directions)
+    const connectionMap = new Map<string, Set<string>>();
+    sortedStudies.forEach(study => {
+      study.series.forEach(series => {
+        series.segmentations.forEach(segmentation => {
+          segmentation.segments.forEach(segment => {
+            if (!connectionMap.has(segment.id)) {
+              connectionMap.set(segment.id, new Set());
+            }
+            // Add forward connections
+            segment.lesion_segments?.forEach(targetId => {
+              connectionMap.get(segment.id)?.add(targetId);
+              // Add backward connections
+              if (!connectionMap.has(targetId)) {
+                connectionMap.set(targetId, new Set());
+              }
+              connectionMap.get(targetId)?.add(segment.id);
+            });
+          });
+        });
+      });
+    });
+
+    // Function to get all connected segments recursively
+    const getAllConnectedSegments = (
+      segmentId: string,
+      visited = new Set<string>()
+    ): Set<string> => {
+      visited.add(segmentId);
+      const connected = connectionMap.get(segmentId) || new Set();
+
+      connected.forEach(connectedId => {
+        if (!visited.has(connectedId)) {
+          getAllConnectedSegments(connectedId, visited);
+        }
+      });
+
+      return visited;
+    };
+
+    // Get highlighted segments and related segments
+    const { selectedSegments, relatedSegments } = React.useMemo(() => {
+      if (!selectedSegmentId) {
+        return { selectedSegments: new Set<string>(), relatedSegments: new Set<string>() };
+      }
+
+      const selected = new Set([selectedSegmentId]);
+      const related = new Set<string>();
+
+      // Add direct connections
+      sortedStudies.forEach(study => {
+        study.series.forEach(series => {
+          series.segmentations.forEach(segmentation => {
+            segmentation.segments.forEach(segment => {
+              if (segment.id === selectedSegmentId) {
+                // Add forward connections
+                segment.lesion_segments?.forEach(targetId => related.add(targetId));
+              } else if (segment.lesion_segments?.includes(selectedSegmentId)) {
+                // Add backward connections
+                related.add(segment.id);
+              }
+            });
+          });
+        });
+      });
+
+      return { selectedSegments: selected, relatedSegments: related };
+    }, [selectedSegmentId, sortedStudies]);
+
+    // Second pass: create nodes
     sortedStudies.forEach((study, studyIndex) => {
-      const yOffset = studyIndex * 150;
+      const yOffset = START_Y + studyIndex * VERTICAL_SPACING;
+      let segmentCount = 0;
+      const totalSegments = studySegmentCounts.get(study.study_id) || 0;
+      const studyWidth = totalSegments * HORIZONTAL_SPACING;
+      const startX = (600 - studyWidth) / 2; // Center the study group
+
+      // Add date label
+      nodes.push({
+        id: `date-${study.study_id}`,
+        type: 'dateLabel',
+        position: {
+          x: startX + studyWidth / 2 - 40,
+          y: yOffset - DATE_OFFSET,
+        },
+        data: { date: study.study_date },
+      });
 
       study.series.forEach(series => {
         series.segmentations.forEach(segmentation => {
-          console.log('Processing segmentation:', {
-            segmentation_id: segmentation.segmentation_id,
-            segments: segmentation.segments,
-          });
+          segmentation.segments.forEach(segment => {
+            const xOffset = startX + segmentCount * HORIZONTAL_SPACING;
+            segmentCount++;
+            const position = { x: xOffset, y: yOffset };
 
-          segmentation.segments.forEach((segment, segmentIndex) => {
-            const xOffset = segmentIndex * 150;
+            // Store node info for edge creation
+            nodeMap.set(segment.id, {
+              studyId: study.study_id,
+              segment,
+              position,
+            });
 
-            // Store segment in map for edge creation
-            nodeMap.set(segment.id, { studyId: study.study_id, segment });
-
-            const node = {
+            // Create node
+            nodes.push({
               id: `${study.study_id}-${segment.id}`,
               type: 'lesion',
-              position: { x: xOffset, y: yOffset },
+              position,
               data: {
                 label: segment.label,
                 segmentId: segment.id,
@@ -162,81 +277,45 @@ export function LesionFlowGraph({
                 classification: segment.lession_classification,
                 lesionType: segment.lession_type,
                 isCurrent: study.study_id === currentStudyId,
-                isSelected: segment.id === selectedSegmentId,
+                isSelected: selectedSegments.has(segment.id),
+                isRelated: relatedSegments.has(segment.id),
               },
-            };
-
-            console.log('Created node:', {
-              nodeId: node.id,
-              segmentId: segment.id,
-              lesion_segments: segment.lesion_segments,
             });
-
-            nodes.push(node);
           });
         });
       });
     });
 
-    console.log(
-      'NodeMap after first pass:',
-      Array.from(nodeMap.entries()).map(([key, value]) => ({
-        segmentId: key,
-        studyId: value.studyId,
-        lesion_segments: value.segment.lesion_segments,
-      }))
-    );
+    // Create edges for connected segments
+    nodeMap.forEach(({ studyId, segment, position: sourcePos }) => {
+      if (segment.lesion_segments?.length > 0) {
+        segment.lesion_segments.forEach(targetId => {
+          const targetInfo = nodeMap.get(targetId);
+          if (targetInfo) {
+            const { position: targetPos } = targetInfo;
+            const isHighlighted =
+              selectedSegments.has(segment.id) ||
+              selectedSegments.has(targetId) ||
+              relatedSegments.has(segment.id) ||
+              relatedSegments.has(targetId);
 
-    // Second pass: create edges based on lesion_segments
-    nodeMap.forEach(({ studyId, segment }) => {
-      if (segment.lesion_segments && segment.lesion_segments.length > 0) {
-        console.log('Creating edges for segment:', {
-          sourceId: segment.id,
-          studyId,
-          lesion_segments: segment.lesion_segments,
-        });
-
-        segment.lesion_segments.forEach(targetSegmentId => {
-          const targetNode = nodeMap.get(targetSegmentId);
-          if (targetNode) {
-            const edge = {
-              id: `e${segment.id}-${targetSegmentId}`,
+            edges.push({
+              id: `e${segment.id}-${targetId}`,
               source: `${studyId}-${segment.id}`,
-              target: `${targetNode.studyId}-${targetSegmentId}`,
+              target: `${targetInfo.studyId}-${targetId}`,
               type: 'smoothstep',
-              animated: true,
+              animated: isHighlighted,
               style: {
-                stroke: segment.id === selectedSegmentId ? '#3b82f6' : '#9ca3af',
-                strokeWidth: 2,
+                stroke: isHighlighted ? 'rgb(37, 99, 235)' : '#4b5563',
+                strokeWidth: isHighlighted ? 3 : 1.5,
+                opacity: isHighlighted ? 1 : 0.5,
               },
-            };
-
-            console.log('Created edge:', {
-              edgeId: edge.id,
-              source: edge.source,
-              target: edge.target,
-            });
-
-            edges.push(edge);
-          } else {
-            console.warn('Target segment not found:', {
-              sourceSegmentId: segment.id,
-              targetSegmentId,
+              sourceHandle: targetPos.y > sourcePos.y ? 'bottom' : 'top',
+              targetHandle: targetPos.y > sourcePos.y ? 'top' : 'bottom',
             });
           }
         });
       }
-    });
-
-    console.log('Final graph data:', {
-      nodes: nodes.length,
-      edges: edges.length,
-      nodeDetails: nodes.map(n => ({
-        id: n.id,
-        label: n.data.label,
-        segmentId: n.data.segmentId,
-      })),
-      edgeDetails: edges,
     });
 
     return { nodes, edges };
@@ -244,26 +323,38 @@ export function LesionFlowGraph({
 
   const { nodes, edges } = getNodesAndEdges();
 
-  const handleNodeClick = (event: React.MouseEvent, node: LesionNode) => {
-    onSegmentSelect?.(node.data.segmentId);
+  const nodeTypes = {
+    lesion: CustomNode,
+    dateLabel: StudyDateLabel,
   };
 
   return (
-    <div style={{ height: 600 }}>
+    <div style={{ height: 500 }}>
       <ReactFlow
         nodes={nodes}
         edges={edges}
         nodeTypes={nodeTypes}
-        onNodeClick={handleNodeClick}
-        defaultEdgeOptions={{ type: 'smoothstep', animated: true }}
+        onNodeClick={(_, node) => {
+          if (node.type === 'lesion') {
+            onSegmentSelect?.(node.data.segmentId);
+          }
+        }}
+        defaultEdgeOptions={{
+          type: 'smoothstep',
+          animated: true,
+          style: { strokeWidth: 1 },
+        }}
         fitView
         fitViewOptions={{
-          padding: 0.3,
+          padding: 0.1,
+          includeHiddenNodes: true,
         }}
+        minZoom={0.5}
+        maxZoom={1.5}
         proOptions={{ hideAttribution: true }}
-        colorMode="dark"
+        // className="bg-[#0a0b0d]"
       >
-        <Background />
+        <Background color="#2a2b2d" />
         <Controls />
       </ReactFlow>
     </div>

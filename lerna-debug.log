@@ -2,15 +2,15 @@
 0 silly argv   _: [ 'run' ],
 0 silly argv   stream: true,
 0 silly argv   lernaVersion: '7.4.2',
-0 silly argv   '$0': 'node_modules/.bin/lerna',
+0 silly argv   '$0': 'node_modules\\lerna\\dist\\cli.js',
 0 silly argv   script: 'build:viewer'
 0 silly argv }
 1 notice cli v7.4.2
 2 verbose packageConfigs Explicit "packages" configuration found in lerna.json. Resolving packages using the configured glob(s): ["extensions/*","platform/*","modes/*","addOns/externals/*"]
-3 verbose rootPath /var/services/Viewers
-4 error SyntaxError: /var/services/Viewers/platform/app/package.json: Expected double-quoted property name in JSON at position 3004 (line 45 column 3)
+3 verbose rootPath D:\Dev\Clients\u_chile_conce\03-Desarrollo\plataforma-web\Viewers
+4 error SyntaxError: D:\Dev\Clients\u_chile_conce\03-Desarrollo\plataforma-web\Viewers\platform\app\package.json: Expected double-quoted property name in JSON at position 3004
 4 error     at JSON.parse (<anonymous>)
-4 error     at _readFile (/var/services/Viewers/node_modules/jsonfile/index.js:25:16)
-4 error     at async Promise.all (index 28)
-4 error     at async createProjectGraphWithPackages (/var/services/Viewers/node_modules/lerna/dist/index.js:1337:18)
-4 error     at async detectProjects (/var/services/Viewers/node_modules/lerna/dist/index.js:1457:24)
+4 error     at _readFile (D:\Dev\Clients\u_chile_conce\03-Desarrollo\plataforma-web\Viewers\node_modules\jsonfile\index.js:25:16)
+4 error     at async Promise.all (index 27)
+4 error     at async createProjectGraphWithPackages (D:\Dev\Clients\u_chile_conce\03-Desarrollo\plataforma-web\Viewers\node_modules\lerna\dist\index.js:1337:18)
+4 error     at async detectProjects (D:\Dev\Clients\u_chile_conce\03-Desarrollo\plataforma-web\Viewers\node_modules\lerna\dist\index.js:1457:24)

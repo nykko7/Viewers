@@ -27,6 +27,13 @@ type EditLesionDialogProps = {
   segmentIndex: number;
 };
 
+// Add this type to help with measurement grouping
+type MeasurementGroup = {
+  segments: Segment[];
+  parentSegment?: Segment;
+  isSelected: boolean;
+};
+
 export function EditLesionDialog({ open, onOpenChange, segmentIndex }: EditLesionDialogProps) {
   const { data, activeSegmentationId } = useSegmentationTableContext('SegmentationTable.Segments');
   const studies = useSegmentationsStore(state => state.getStudies());
@@ -121,6 +128,47 @@ export function EditLesionDialog({ open, onOpenChange, segmentIndex }: EditLesio
   const handleInputChange = (field: string, value: string) => {
     // TODO: Implement save functionality
     console.log('Field changed:', field, value);
+  };
+
+  // Update the segment filtering logic to properly handle relationships
+  const getRelatedSegments = (currentSegment: Segment | null, study: Study): MeasurementGroup[] => {
+    if (!currentSegment) {
+      return [];
+    }
+
+    const groups: MeasurementGroup[] = [];
+    const processedSegments = new Set<string>();
+
+    study.series.forEach(series => {
+      series.segmentations.forEach(segmentation => {
+        // Find segments that are related to current segment
+        const relatedSegments = segmentation.segments.filter(s => {
+          // Direct relationship (current segment points to this one or vice versa)
+          const isDirectlyRelated =
+            s.id === currentSegment.id ||
+            s.lesion_segments?.includes(currentSegment.id) ||
+            currentSegment.lesion_segments?.includes(s.id);
+
+          // Sibling relationship (share same parent)
+          const isSibling = segmentation.segments.some(
+            parentSegment =>
+              parentSegment.lesion_segments?.includes(s.id) &&
+              parentSegment.lesion_segments?.includes(currentSegment.id)
+          );
+
+          return isDirectlyRelated || isSibling;
+        });
+
+        if (relatedSegments.length > 0) {
+          groups.push({
+            segments: relatedSegments,
+            isSelected: relatedSegments.some(s => s.id === currentSegment.id),
+          });
+        }
+      });
+    });
+
+    return groups;
   };
 
   return (
@@ -229,81 +277,67 @@ export function EditLesionDialog({ open, onOpenChange, segmentIndex }: EditLesio
                             new Date(a.study_date).getTime() - new Date(b.study_date).getTime()
                         )
                         .map(study => {
-                          // Find all related segments in this study
-                          const segments = study.series
-                            .flatMap(s =>
-                              s.segmentations.flatMap(seg =>
-                                seg.segments.filter(s => {
-                                  // Include the current segment
-                                  if (s.id === currentSegment?.id) {
-                                    return true;
-                                  }
-                                  // Include only direct relationships
-                                  if (currentSegment?.lesion_segments?.includes(s.id)) {
-                                    return true;
-                                  }
-                                  // Include segments that directly point to this segment
-                                  if (s.lesion_segments?.includes(currentSegment?.id || '')) {
-                                    return true;
-                                  }
-                                  return false;
-                                })
-                              )
-                            )
-                            .filter(Boolean);
+                          const measurementGroups = getRelatedSegments(currentSegment, study);
 
-                          if (segments.length === 0) {
+                          if (measurementGroups.length === 0) {
                             return null;
                           }
 
-                          const isSelectedStudy = segments.some(s => s.id === selectedSegmentId);
-                          const isCurrentStudy = study.study_id === segmentStudy?.study_id;
-
-                          // Calculate totals
-                          const totalVolume = segments.reduce(
-                            (sum, seg) => sum + (seg.volume || 0),
-                            0
-                          );
-                          const individualVolumes = segments.map(s => s.volume).filter(Boolean);
-
-                          const volumeDisplay =
-                            segments.length > 1
-                              ? `${totalVolume} (${individualVolumes.join(' + ')})`
-                              : totalVolume;
-
                           return (
-                            <div
-                              key={study.study_id}
-                              className={`text-secondary-foreground grid grid-cols-5 gap-4 px-4 py-3 text-sm ${
-                                isSelectedStudy
-                                  ? 'border-l-4 !border-l-[#2563eb] bg-[#2563eb]/10'
-                                  : isCurrentStudy
-                                    ? 'bg-blue-50/30'
-                                    : ''
-                              }`}
-                            >
-                              <div className="font-medium">
-                                {new Date(study.study_date).toLocaleDateString()}
-                              </div>
-                              <div>{volumeDisplay}</div>
-                              <div>
-                                {segments
-                                  .map(s => s.axial_diameter)
-                                  .filter(Boolean)
-                                  .join(' + ') || '--'}
-                              </div>
-                              <div>
-                                {segments
-                                  .map(s => s.coronal_diameter)
-                                  .filter(Boolean)
-                                  .join(' + ') || '--'}
-                              </div>
-                              <div>
-                                {segments
-                                  .map(s => s.sagittal_diameter)
-                                  .filter(Boolean)
-                                  .join(' + ') || '--'}
-                              </div>
+                            <div key={study.study_id}>
+                              {measurementGroups.map((group, index) => {
+                                const totalVolume = group.segments.reduce(
+                                  (sum, seg) => sum + (seg.volume || 0),
+                                  0
+                                );
+                                const parentVolume = group.parentSegment?.volume || 0;
+
+                                const volumeDisplay =
+                                  group.segments.length > 1
+                                    ? `${totalVolume} (${group.segments.map(s => s.volume).join(' + ')})`
+                                    : group.parentSegment
+                                      ? `${parentVolume} → ${totalVolume}`
+                                      : totalVolume;
+
+                                return (
+                                  <div
+                                    key={`${study.study_id}-${index}`}
+                                    className={`text-secondary-foreground grid grid-cols-5 gap-4 px-4 py-3 text-sm ${
+                                      group.isSelected
+                                        ? 'border-l-4 !border-l-[#2563eb] bg-[#2563eb]/10'
+                                        : ''
+                                    }`}
+                                  >
+                                    <div className="font-medium">
+                                      {new Date(study.study_date).toLocaleDateString()}
+                                      {group.segments.length > 1 && ' (multiple)'}
+                                    </div>
+                                    <div>
+                                      {group.segments.length > 1
+                                        ? `${totalVolume} (${group.segments.map(s => s.volume).join(' + ')})`
+                                        : totalVolume}
+                                    </div>
+                                    <div>
+                                      {group.segments
+                                        .map(s => s.axial_diameter)
+                                        .filter(Boolean)
+                                        .join(' + ') || '--'}
+                                    </div>
+                                    <div>
+                                      {group.segments
+                                        .map(s => s.coronal_diameter)
+                                        .filter(Boolean)
+                                        .join(' + ') || '--'}
+                                    </div>
+                                    <div>
+                                      {group.segments
+                                        .map(s => s.sagittal_diameter)
+                                        .filter(Boolean)
+                                        .join(' + ') || '--'}
+                                    </div>
+                                  </div>
+                                );
+                              })}
                             </div>
                           );
                         })}

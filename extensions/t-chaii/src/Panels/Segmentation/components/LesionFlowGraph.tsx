@@ -89,7 +89,7 @@ const CustomNode = ({ data, id }: NodeProps) => {
       </NodeToolbar>
 
       <div
-        className="flex h-12 w-12 cursor-pointer items-center justify-center rounded-full border-[4px] transition-all duration-200 hover:scale-110"
+        className="relative flex h-12 w-12 cursor-pointer items-center justify-center rounded-full border-[4px] transition-all duration-200 hover:scale-110"
         style={{
           background: getBackgroundColor(),
           borderColor: getBorderColor(),
@@ -99,9 +99,29 @@ const CustomNode = ({ data, id }: NodeProps) => {
         onMouseEnter={() => setIsHovered(true)}
         onMouseLeave={() => setIsHovered(false)}
       >
-        <Handle type="target" position={Position.Top} />
+        <Handle
+          type="target"
+          position={Position.Top}
+          id="top"
+          style={{
+            background: '#555',
+            width: '8px',
+            height: '8px',
+            top: '-4px',
+          }}
+        />
         <div className="text-sm font-bold">{formatSegmentLabel(nodeData.label)}</div>
-        <Handle type="source" position={Position.Bottom} />
+        <Handle
+          type="source"
+          position={Position.Bottom}
+          id="bottom"
+          style={{
+            background: '#555',
+            width: '8px',
+            height: '8px',
+            bottom: '-4px',
+          }}
+        />
       </div>
     </>
   );
@@ -127,6 +147,24 @@ export function LesionFlowGraph({
   selectedSegmentId,
   onSegmentSelect,
 }: LesionFlowGraphProps) {
+  const debugSegmentConnections = (studies: Study[]) => {
+    console.log('=== Debug Segment Connections ===');
+    studies.forEach(study => {
+      console.log(`Study Date: ${study.study_date}`);
+      study.series.forEach(series => {
+        series.segmentations.forEach(segmentation => {
+          segmentation.segments.forEach(segment => {
+            console.log(`Segment ${segment.label}:`, {
+              id: segment.id,
+              nodeId: `${study.study_id}-${segment.id}`,
+              lesion_segments: segment.lesion_segments,
+            });
+          });
+        });
+      });
+    });
+  };
+
   const getNodesAndEdges = useCallback(() => {
     const nodes: Node<LesionNodeData>[] = [];
     const edges: Edge[] = [];
@@ -158,44 +196,79 @@ export function LesionFlowGraph({
       studySegmentCounts.set(study.study_id, count);
     });
 
-    // Build a map of all connected segments (both directions)
-    const connectionMap = new Map<string, Set<string>>();
-    sortedStudies.forEach(study => {
-      study.series.forEach(series => {
-        series.segmentations.forEach(segmentation => {
-          segmentation.segments.forEach(segment => {
-            if (!connectionMap.has(segment.id)) {
-              connectionMap.set(segment.id, new Set());
-            }
-            // Add forward connections
-            segment.lesion_segments?.forEach(targetId => {
-              connectionMap.get(segment.id)?.add(targetId);
-              // Add backward connections
-              if (!connectionMap.has(targetId)) {
-                connectionMap.set(targetId, new Set());
-              }
-              connectionMap.get(targetId)?.add(segment.id);
+    // First, let's modify how we build the connection map
+    const buildConnectionMap = (studies: Study[]) => {
+      const connectionMap = new Map<string, Set<string>>();
+      const parentToChildren = new Map<string, Set<string>>();
+
+      // Helper to add connection
+      const addConnection = (sourceId: string, targetId: string) => {
+        if (!connectionMap.has(sourceId)) {
+          connectionMap.set(sourceId, new Set());
+        }
+        connectionMap.get(sourceId)!.add(targetId);
+      };
+
+      // First pass: build direct connections and track parent-child relationships
+      studies.forEach(study => {
+        study.series.forEach(series => {
+          series.segmentations.forEach(segmentation => {
+            segmentation.segments.forEach(segment => {
+              segment.lesion_segments?.forEach(targetId => {
+                addConnection(segment.id, targetId);
+                addConnection(targetId, segment.id);
+
+                // Track parent-child relationship
+                if (!parentToChildren.has(segment.id)) {
+                  parentToChildren.set(segment.id, new Set());
+                }
+                parentToChildren.get(segment.id)!.add(targetId);
+              });
             });
           });
         });
       });
-    });
 
-    // Function to get all connected segments recursively
-    const getAllConnectedSegments = (
-      segmentId: string,
-      visited = new Set<string>()
-    ): Set<string> => {
-      visited.add(segmentId);
-      const connected = connectionMap.get(segmentId) || new Set();
-
-      connected.forEach(connectedId => {
-        if (!visited.has(connectedId)) {
-          getAllConnectedSegments(connectedId, visited);
+      // Second pass: connect siblings (segments that share the same parent)
+      parentToChildren.forEach((children, _) => {
+        const childrenArray = Array.from(children);
+        // Connect all children to each other
+        for (let i = 0; i < childrenArray.length; i++) {
+          for (let j = i + 1; j < childrenArray.length; j++) {
+            addConnection(childrenArray[i], childrenArray[j]);
+            addConnection(childrenArray[j], childrenArray[i]);
+          }
         }
       });
 
-      return visited;
+      return connectionMap;
+    };
+
+    const connectionMap = buildConnectionMap(sortedStudies);
+
+    // Update how we get related segments
+    const getRelatedSegments = (segmentId: string, connectionMap: Map<string, Set<string>>) => {
+      const related = new Set<string>();
+      const toVisit = [segmentId];
+      const visited = new Set<string>();
+
+      while (toVisit.length > 0) {
+        const currentId = toVisit.pop()!;
+        if (!visited.has(currentId)) {
+          visited.add(currentId);
+          const connections = connectionMap.get(currentId);
+          if (connections) {
+            connections.forEach(connectedId => {
+              related.add(connectedId);
+              if (!visited.has(connectedId)) {
+                toVisit.push(connectedId);
+              }
+            });
+          }
+        }
+      }
+
+      return related;
     };
 
     // Get highlighted segments and related segments
@@ -205,27 +278,10 @@ export function LesionFlowGraph({
       }
 
       const selected = new Set([selectedSegmentId]);
-      const related = new Set<string>();
-
-      // Add direct connections
-      sortedStudies.forEach(study => {
-        study.series.forEach(series => {
-          series.segmentations.forEach(segmentation => {
-            segmentation.segments.forEach(segment => {
-              if (segment.id === selectedSegmentId) {
-                // Add forward connections
-                segment.lesion_segments?.forEach(targetId => related.add(targetId));
-              } else if (segment.lesion_segments?.includes(selectedSegmentId)) {
-                // Add backward connections
-                related.add(segment.id);
-              }
-            });
-          });
-        });
-      });
+      const related = getRelatedSegments(selectedSegmentId, connectionMap);
 
       return { selectedSegments: selected, relatedSegments: related };
-    }, [selectedSegmentId, sortedStudies]);
+    }, [selectedSegmentId, connectionMap]);
 
     // Second pass: create nodes
     sortedStudies.forEach((study, studyIndex) => {
@@ -287,31 +343,41 @@ export function LesionFlowGraph({
     });
 
     // Create edges for connected segments
-    nodeMap.forEach(({ studyId, segment, position: sourcePos }) => {
+    nodeMap.forEach(({ studyId, segment }) => {
       if (segment.lesion_segments?.length > 0) {
         segment.lesion_segments.forEach(targetId => {
           const targetInfo = nodeMap.get(targetId);
+
           if (targetInfo) {
-            const { position: targetPos } = targetInfo;
+            const { studyId: targetStudyId } = targetInfo;
+            const sourceNodeId = `${studyId}-${segment.id}`;
+            const targetNodeId = `${targetStudyId}-${targetId}`;
+
+            // Determine if this edge should be highlighted
             const isHighlighted =
               selectedSegments.has(segment.id) ||
               selectedSegments.has(targetId) ||
-              relatedSegments.has(segment.id) ||
-              relatedSegments.has(targetId);
+              (relatedSegments.has(segment.id) && relatedSegments.has(targetId));
 
             edges.push({
               id: `e${segment.id}-${targetId}`,
-              source: `${studyId}-${segment.id}`,
-              target: `${targetInfo.studyId}-${targetId}`,
+              source: sourceNodeId,
+              target: targetNodeId,
               type: 'smoothstep',
               animated: isHighlighted,
               style: {
-                stroke: isHighlighted ? 'rgb(37, 99, 235)' : '#4b5563',
-                strokeWidth: isHighlighted ? 3 : 1.5,
-                opacity: isHighlighted ? 1 : 0.5,
+                stroke: isHighlighted ? 'rgb(130, 193, 248)' : '#4b5563', // Light blue for highlighted edges
+                strokeWidth: isHighlighted ? 2.5 : 1.5,
+                opacity: isHighlighted ? 1 : 0.6,
               },
-              sourceHandle: targetPos.y > sourcePos.y ? 'bottom' : 'top',
-              targetHandle: targetPos.y > sourcePos.y ? 'top' : 'bottom',
+              sourceHandle: 'bottom',
+              targetHandle: 'top',
+              markerEnd: {
+                type: 'arrowclosed',
+                width: 20,
+                height: 20,
+                color: isHighlighted ? 'rgb(130, 193, 248)' : '#4b5563',
+              },
             });
           }
         });
@@ -341,18 +407,17 @@ export function LesionFlowGraph({
         }}
         defaultEdgeOptions={{
           type: 'smoothstep',
-          animated: true,
-          style: { strokeWidth: 1 },
+          animated: false,
+          style: { strokeWidth: 1.5 },
         }}
         fitView
         fitViewOptions={{
-          padding: 0.1,
+          padding: 0.2,
           includeHiddenNodes: true,
         }}
         minZoom={0.5}
         maxZoom={1.5}
         proOptions={{ hideAttribution: true }}
-        // className="bg-[#0a0b0d]"
       >
         <Background color="#2a2b2d" />
         <Controls />

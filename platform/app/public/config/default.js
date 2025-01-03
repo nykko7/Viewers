@@ -1,7 +1,7 @@
 /** @type {AppTypes.Config} */
 
 window.config = {
-  routerBasename: '/',
+  routerBasename: '/viewer',
   // whiteLabeling: {},
   extensions: [
     '@ohif/extension-default',

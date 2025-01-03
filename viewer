@@ -1,0 +1,14 @@
+error Command "start:prod" not found.
+error Command "start:prod" not found.
+error SyntaxError: /var/services/Viewers/package.json: Expected ',' or '}' after property value in JSON at position 2746 (line 65 column 5)
+    at JSON.parse (<anonymous>)
+    at /usr/local/lib/node_modules/yarn/lib/cli.js:1629:59
+    at Generator.next (<anonymous>)
+    at step (/usr/local/lib/node_modules/yarn/lib/cli.js:310:30)
+    at /usr/local/lib/node_modules/yarn/lib/cli.js:321:13
+error SyntaxError: /var/services/Viewers/package.json: Expected ',' or '}' after property value in JSON at position 2746 (line 65 column 5)
+    at JSON.parse (<anonymous>)
+    at /usr/local/lib/node_modules/yarn/lib/cli.js:1629:59
+    at Generator.next (<anonymous>)
+    at step (/usr/local/lib/node_modules/yarn/lib/cli.js:310:30)
+    at /usr/local/lib/node_modules/yarn/lib/cli.js:321:13

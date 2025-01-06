@@ -49,7 +49,7 @@ export function SegmentStats({ stats, showChangeValues = true }: SegmentStatsPro
             {key === 'affected_organs'
               ? affectedOrgansLabels[stats[key]]
               : stats[key]
-                ? `${stats[key]} ${value.unit}`
+                ? `${stats[key].toFixed(2)} ${value.unit}`
                 : '--'}{' '}
             {stats[`${key}_change`] && renderChangeValue(stats[`${key}_change`] as number)}
           </span>

@@ -314,8 +314,8 @@ export function EditLesionDialog({ open, onOpenChange, segmentIndex }: EditLesio
                                     </div>
                                     <div>
                                       {group.segments.length > 1
-                                        ? `${totalVolume} (${group.segments.map(s => s.volume).join(' + ')})`
-                                        : totalVolume}
+                                        ? `${totalVolume.toFixed(2)} (${group.segments.map(s => s.volume.toFixed(2)).join(' + ')})`
+                                        : totalVolume.toFixed(2)}
                                     </div>
                                     <div>
                                       {group.segments

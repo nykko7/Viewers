@@ -356,6 +356,7 @@ export function EditLesionDialog({ open, onOpenChange, segmentIndex }: EditLesio
                   currentStudyId={segmentStudy?.study_id || ''}
                   selectedSegmentId={currentSegment?.id}
                   onSegmentSelect={setSelectedSegmentId}
+                  baselineStudyId={Object.values(studies)[0]?.study_id}
                 />
               </div>
             </div>

@@ -13,6 +13,7 @@ import {
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import type { Study, Segment } from '../../../types';
+import { cn } from '@ohif/ui-next/lib/utils';
 
 type LesionNodeData = {
   label: string;
@@ -28,6 +29,7 @@ type LesionNodeData = {
   isCurrent: boolean;
   isSelected: boolean;
   isRelated: boolean;
+  isBaseline?: boolean;
 };
 
 type LesionNode = Node<LesionNodeData>;
@@ -44,6 +46,9 @@ const CustomNode = ({ data, id }: NodeProps) => {
   const nodeData = data as LesionNodeData;
 
   const getBorderColor = () => {
+    if (nodeData.isBaseline) {
+      return 'rgb(34, 197, 94)';
+    }
     if (nodeData.isSelected) {
       return 'rgb(37, 99, 235)';
     }
@@ -55,7 +60,10 @@ const CustomNode = ({ data, id }: NodeProps) => {
 
   const getBackgroundColor = () => {
     if (nodeData.isSelected) {
-      return 'rgb(37, 99, 235)';
+      return nodeData.isBaseline ? 'rgb(34, 197, 94)' : 'rgb(37, 99, 235)';
+    }
+    if (nodeData.isBaseline) {
+      return 'rgb(220, 252, 231)';
     }
     if (nodeData.isRelated) {
       return 'rgb(191, 219, 254)';
@@ -64,7 +72,7 @@ const CustomNode = ({ data, id }: NodeProps) => {
   };
 
   const getTextColor = () => {
-    if (nodeData.isSelected) {
+    if (nodeData.isSelected && !nodeData.isBaseline) {
       return 'white';
     }
     return 'black';
@@ -93,7 +101,7 @@ const CustomNode = ({ data, id }: NodeProps) => {
         style={{
           background: getBackgroundColor(),
           borderColor: getBorderColor(),
-          color: nodeData.isSelected ? 'white' : 'black',
+          color: getTextColor(),
           boxShadow: nodeData.isRelated ? '0 0 0 2px rgba(59, 130, 246, 0.3)' : 'none',
         }}
         onMouseEnter={() => setIsHovered(true)}
@@ -128,8 +136,13 @@ const CustomNode = ({ data, id }: NodeProps) => {
 };
 
 // Update StudyDateLabel component
-const StudyDateLabel = ({ data }: NodeProps) => (
-  <div className="rounded bg-gray-800 px-3 py-1 text-center text-xs text-gray-300">
+const StudyDateLabel = ({ data }: NodeProps<{ date: string; isBaseline?: boolean }>) => (
+  <div
+    className={cn(
+      'rounded px-3 py-1 text-center text-xs',
+      data.isBaseline ? 'bg-green-800 text-green-100' : 'bg-gray-800 text-gray-300'
+    )}
+  >
     {new Date(data.date).toLocaleDateString()}
   </div>
 );
@@ -139,6 +152,7 @@ type LesionFlowGraphProps = {
   currentStudyId: string;
   selectedSegmentId?: string;
   onSegmentSelect?: (segmentId: string) => void;
+  baselineStudyId?: string;
 };
 
 export function LesionFlowGraph({
@@ -146,6 +160,7 @@ export function LesionFlowGraph({
   currentStudyId,
   selectedSegmentId,
   onSegmentSelect,
+  baselineStudyId,
 }: LesionFlowGraphProps) {
   const debugSegmentConnections = (studies: Study[]) => {
     console.log('=== Debug Segment Connections ===');
@@ -299,7 +314,10 @@ export function LesionFlowGraph({
           x: startX + studyWidth / 2 - 40,
           y: yOffset - DATE_OFFSET,
         },
-        data: { date: study.study_date },
+        data: {
+          date: study.study_date,
+          isBaseline: study.study_id === baselineStudyId,
+        },
       });
 
       study.series.forEach(series => {
@@ -335,6 +353,7 @@ export function LesionFlowGraph({
                 isCurrent: study.study_id === currentStudyId,
                 isSelected: selectedSegments.has(segment.id),
                 isRelated: relatedSegments.has(segment.id),
+                isBaseline: study.study_id === baselineStudyId,
               },
             });
           });
@@ -385,7 +404,7 @@ export function LesionFlowGraph({
     });
 
     return { nodes, edges };
-  }, [studies, currentStudyId, selectedSegmentId]);
+  }, [studies, currentStudyId, selectedSegmentId, baselineStudyId]);
 
   const { nodes, edges } = getNodesAndEdges();
 
@@ -395,7 +414,7 @@ export function LesionFlowGraph({
   };
 
   return (
-    <div style={{ height: 500 }}>
+    <div style={{ height: 500 }} className="relative">
       <ReactFlow
         nodes={nodes}
         edges={edges}
@@ -421,7 +440,38 @@ export function LesionFlowGraph({
       >
         <Background color="#2a2b2d" />
         <Controls />
+        <Legend />
       </ReactFlow>
     </div>
   );
 }
+
+// Add Legend component
+const Legend = () => (
+  <div className="absolute right-4 top-4 rounded border border-gray-200 bg-white p-2 shadow-md">
+    <div className="mb-2 text-xs font-semibold">Legend</div>
+    <div className="space-y-2">
+      <div className="flex items-center gap-2">
+        <div className="relative h-3 w-3">
+          <div
+            className="absolute h-3 w-1.5 rounded-l-full border-y-2 border-l-2 border-blue-600 bg-blue-600"
+            style={{ left: 0 }}
+          />
+          <div
+            className="absolute h-3 w-1.5 rounded-r-full border-y-2 border-r-2 border-green-500 bg-green-500"
+            style={{ right: 0 }}
+          />
+        </div>
+        <span className="text-xs">Selected Lesion</span>
+      </div>
+      <div className="flex items-center gap-2">
+        <div className="h-3 w-3 rounded-full border-2 border-blue-400 bg-blue-100" />
+        <span className="text-xs">Related Lesion</span>
+      </div>
+      <div className="flex items-center gap-2">
+        <div className="h-3 w-3 rounded-full border-2 border-green-500 bg-green-100" />
+        <span className="text-xs">Baseline Lesion</span>
+      </div>
+    </div>
+  </div>
+);

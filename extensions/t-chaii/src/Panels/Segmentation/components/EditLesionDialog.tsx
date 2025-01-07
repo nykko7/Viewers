@@ -21,6 +21,9 @@ import { LesionFlowGraph } from './LesionFlowGraph';
 import { useSegmentationTableContext } from '@ohif/ui-next';
 import { useSegmentationsStore } from '../../../stores/useSegmentationsStore';
 import { formatValue } from '../../../utils/formatValue';
+import { useLesionTrajectory } from '../hooks/useLesionTrajectory';
+import { cn } from '@ohif/ui-next/lib/utils';
+import { buildConnectionMap } from '../utils/buildConnectionMap';
 
 type EditLesionDialogProps = {
   open: boolean;
@@ -34,6 +37,53 @@ type MeasurementGroup = {
   parentSegment?: Segment;
   isSelected: boolean;
 };
+
+// Add a helper component for the study group
+type StudyGroupRowsProps = {
+  study: Study;
+  segments: SegmentWithStudy[];
+  totalVolume: number;
+};
+
+function StudyGroupRows({ study, segments, totalVolume }: StudyGroupRowsProps) {
+  return (
+    <div className="divide-y divide-gray-200/10">
+      {segments.map((segmentData, index) => (
+        <div
+          key={segmentData.segment.id}
+          className={cn(
+            'text-secondary-foreground grid grid-cols-6 gap-4 px-4 py-3 text-sm',
+            segmentData.isSelected && 'border-l-4 !border-l-[#2563eb] bg-[#2563eb]/10',
+            // Remove divider between segments of the same study
+            index > 0 && 'border-t-0'
+          )}
+        >
+          {/* Show date only for first segment in study */}
+          <div>{index === 0 ? new Date(study.study_date).toLocaleDateString() : ''}</div>
+          <div className="font-medium">
+            {segmentData.segment.label}
+            {segmentData.isSplit && <span className="ml-2 text-orange-500">(split)</span>}
+            {segmentData.isMerge && <span className="ml-2 text-blue-500">(merge)</span>}
+          </div>
+          <div>{formatValue(segmentData.segment.volume)}</div>
+          <div>{formatValue(segmentData.segment.axial_diameter)}</div>
+          <div>{formatValue(segmentData.segment.coronal_diameter)}</div>
+          <div>{formatValue(segmentData.segment.sagittal_diameter)}</div>
+        </div>
+      ))}
+      {segments.length > 1 && (
+        <div className="text-secondary-foreground grid grid-cols-6 gap-4 bg-gray-50/10 px-4 py-2 text-sm font-semibold">
+          <div></div>
+          <div>Total</div>
+          <div>{formatValue(totalVolume)}</div>
+          <div>-</div>
+          <div>-</div>
+          <div>-</div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 export function EditLesionDialog({ open, onOpenChange, segmentIndex }: EditLesionDialogProps) {
   const { data, activeSegmentationId } = useSegmentationTableContext('SegmentationTable.Segments');
@@ -172,9 +222,12 @@ export function EditLesionDialog({ open, onOpenChange, segmentIndex }: EditLesio
     return groups;
   };
 
+  const connectionMap = buildConnectionMap(Object.values(studies));
+  const trajectory = useLesionTrajectory(Object.values(studies), currentSegment?.id, connectionMap);
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-6xl">
+      <DialogContent className="max-w-screen-xl">
         <TooltipProvider>
           <DialogHeader>
             <DialogTitle className="text-primary-light">Lesion Information</DialogTitle>
@@ -262,86 +315,28 @@ export function EditLesionDialog({ open, onOpenChange, segmentIndex }: EditLesio
                 <Label>Measurements History:</Label>
                 <div className="overflow-hidden rounded border">
                   <div className="min-w-full divide-y divide-gray-200">
+                    {/* Table header */}
                     <div className="bg-secondary-dark border-secondary-light">
-                      <div className="text-secondary-foreground grid grid-cols-5 gap-4 px-4 py-3 text-sm font-semibold">
+                      <div className="text-secondary-foreground grid grid-cols-6 gap-4 px-4 py-3 text-sm font-semibold">
                         <div>Date</div>
+                        <div>Segment</div>
                         <div>Volume (mm³)</div>
                         <div>Axial Diameter (mm)</div>
                         <div>Coronal Diameter (mm)</div>
                         <div>Sagittal Diameter (mm)</div>
                       </div>
                     </div>
+
+                    {/* Table body */}
                     <div className="divide-y divide-gray-200">
-                      {Object.values(studies)
-                        .sort(
-                          (a, b) =>
-                            new Date(a.study_date).getTime() - new Date(b.study_date).getTime()
-                        )
-                        .map(study => {
-                          const measurementGroups = getRelatedSegments(currentSegment, study);
-
-                          if (measurementGroups.length === 0) {
-                            return null;
-                          }
-
-                          return (
-                            <div key={study.study_id}>
-                              {measurementGroups.map((group, index) => {
-                                const totalVolume = group.segments.reduce(
-                                  (sum, seg) => sum + (seg.volume || 0),
-                                  0
-                                );
-                                const parentVolume = group.parentSegment?.volume || 0;
-
-                                const volumeDisplay =
-                                  group.segments.length > 1
-                                    ? `${totalVolume} (${group.segments.map(s => s.volume).join(' + ')})`
-                                    : group.parentSegment
-                                      ? `${parentVolume} → ${totalVolume}`
-                                      : totalVolume;
-
-                                return (
-                                  <div
-                                    key={`${study.study_id}-${index}`}
-                                    className={`text-secondary-foreground grid grid-cols-5 gap-4 px-4 py-3 text-sm ${
-                                      group.isSelected
-                                        ? 'border-l-4 !border-l-[#2563eb] bg-[#2563eb]/10'
-                                        : ''
-                                    }`}
-                                  >
-                                    <div className="font-medium">
-                                      {new Date(study.study_date).toLocaleDateString()}
-                                      {group.segments.length > 1 && ' (multiple)'}
-                                    </div>
-                                    <div>
-                                      {group.segments.length > 1
-                                        ? `${formatValue(totalVolume)} (${group.segments.map(s => formatValue(s.volume)).join(' + ')})`
-                                        : formatValue(totalVolume)}
-                                    </div>
-                                    <div>
-                                      {group.segments
-                                        .map(s => s.axial_diameter)
-                                        .filter(Boolean)
-                                        .join(' + ') || '--'}
-                                    </div>
-                                    <div>
-                                      {group.segments
-                                        .map(s => s.coronal_diameter)
-                                        .filter(Boolean)
-                                        .join(' + ') || '--'}
-                                    </div>
-                                    <div>
-                                      {group.segments
-                                        .map(s => s.sagittal_diameter)
-                                        .filter(Boolean)
-                                        .join(' + ') || '--'}
-                                    </div>
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          );
-                        })}
+                      {trajectory.map(({ study, segments, totalVolume }) => (
+                        <StudyGroupRows
+                          key={study.study_id}
+                          study={study}
+                          segments={segments}
+                          totalVolume={totalVolume}
+                        />
+                      ))}
                     </div>
                   </div>
                 </div>

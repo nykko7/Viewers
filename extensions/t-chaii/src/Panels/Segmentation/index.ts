@@ -6,4 +6,6 @@ export * from './components/SegmentRow';
 export * from './components/SegmentStats';
 export * from './hooks/useSegmentGroups';
 export * from './hooks/useSegmentHandlers';
+export * from './hooks/useLesionTrajectory';
+export * from './utils/buildConnectionMap';
 export * from '../../types';

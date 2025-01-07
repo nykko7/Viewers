@@ -17,6 +17,7 @@ import type { Study, Segment } from '../../../types';
 import { cn } from '@ohif/ui-next/lib/utils';
 import { formatValue } from '../../../utils/formatValue';
 import { Home } from 'lucide-react';
+import { buildConnectionMap } from '../utils/buildConnectionMap';
 
 type LesionNodeData = {
   label: string;
@@ -183,35 +184,6 @@ export function LesionFlowGraph({
     });
   };
 
-  const buildConnectionMap = (studies: Study[]) => {
-    const connectionMap = new Map<string, Set<string>>();
-
-    // Helper to add a parent->child connection
-    const addConnection = (parentId: string, childId: string) => {
-      if (!connectionMap.has(parentId)) {
-        connectionMap.set(parentId, new Set());
-      }
-      connectionMap.get(parentId)!.add(childId);
-    };
-
-    // First pass: build direct parent->child connections
-    studies.forEach(study => {
-      study.series.forEach(series => {
-        series.segmentations.forEach(segmentation => {
-          segmentation.segments.forEach(segment => {
-            // If segment has parents, create parent->child connections
-            segment.lesion_segments?.forEach(parentId => {
-              addConnection(parentId, segment.id);
-            });
-          });
-        });
-      });
-    });
-
-    return connectionMap;
-  };
-
-  // Add this function to get related segments
   const getRelatedSegments = (segmentId: string, connectionMap: Map<string, Set<string>>) => {
     const related = new Set<string>();
     const toVisit = [segmentId];

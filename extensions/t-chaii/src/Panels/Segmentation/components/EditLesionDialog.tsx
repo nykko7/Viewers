@@ -43,9 +43,17 @@ type StudyGroupRowsProps = {
   study: Study;
   segments: SegmentWithStudy[];
   totalVolume: number;
+  onSegmentSelect: (segmentId: string) => void;
+  selectedSegmentId: string | null;
 };
 
-function StudyGroupRows({ study, segments, totalVolume }: StudyGroupRowsProps) {
+function StudyGroupRows({
+  study,
+  segments,
+  totalVolume,
+  onSegmentSelect,
+  selectedSegmentId,
+}: StudyGroupRowsProps) {
   return (
     <div className="divide-y divide-gray-200/10">
       {segments.map((segmentData, index) => (
@@ -53,10 +61,19 @@ function StudyGroupRows({ study, segments, totalVolume }: StudyGroupRowsProps) {
           key={segmentData.segment.id}
           className={cn(
             'text-secondary-foreground grid grid-cols-6 gap-4 px-4 py-3 text-sm',
-            segmentData.isSelected && 'border-l-4 !border-l-[#2563eb] bg-[#2563eb]/10',
-            // Remove divider between segments of the same study
+            'cursor-pointer transition-colors hover:bg-[#2563eb]/10',
+            segmentData.segment.id === selectedSegmentId &&
+              'border-l-4 !border-l-[#2563eb] bg-[#2563eb]/10',
             index > 0 && 'border-t-0'
           )}
+          onClick={() => onSegmentSelect(segmentData.segment.id)}
+          role="button"
+          tabIndex={0}
+          onKeyDown={e => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              onSegmentSelect(segmentData.segment.id);
+            }
+          }}
         >
           {/* Show date only for first segment in study */}
           <div>{index === 0 ? new Date(study.study_date).toLocaleDateString() : ''}</div>
@@ -335,6 +352,8 @@ export function EditLesionDialog({ open, onOpenChange, segmentIndex }: EditLesio
                           study={study}
                           segments={segments}
                           totalVolume={totalVolume}
+                          onSegmentSelect={setSelectedSegmentId}
+                          selectedSegmentId={selectedSegmentId}
                         />
                       ))}
                     </div>

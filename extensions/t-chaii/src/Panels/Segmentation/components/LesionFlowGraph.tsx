@@ -183,18 +183,92 @@ export function LesionFlowGraph({
     });
   };
 
+  const buildConnectionMap = (studies: Study[]) => {
+    const connectionMap = new Map<string, Set<string>>();
+
+    // Helper to add a parent->child connection
+    const addConnection = (parentId: string, childId: string) => {
+      if (!connectionMap.has(parentId)) {
+        connectionMap.set(parentId, new Set());
+      }
+      connectionMap.get(parentId)!.add(childId);
+    };
+
+    // First pass: build direct parent->child connections
+    studies.forEach(study => {
+      study.series.forEach(series => {
+        series.segmentations.forEach(segmentation => {
+          segmentation.segments.forEach(segment => {
+            // If segment has parents, create parent->child connections
+            segment.lesion_segments?.forEach(parentId => {
+              addConnection(parentId, segment.id);
+            });
+          });
+        });
+      });
+    });
+
+    return connectionMap;
+  };
+
+  // Add this function to get related segments
+  const getRelatedSegments = (segmentId: string, connectionMap: Map<string, Set<string>>) => {
+    const related = new Set<string>();
+    const toVisit = [segmentId];
+    const visited = new Set<string>();
+
+    // Helper to add a segment and its relatives
+    const addSegmentAndRelatives = (id: string) => {
+      if (visited.has(id)) {
+        return;
+      }
+      visited.add(id);
+      related.add(id);
+
+      // Add children
+      const children = connectionMap.get(id);
+      if (children) {
+        children.forEach(childId => {
+          toVisit.push(childId);
+        });
+      }
+
+      // Add parents (by searching through all connections)
+      connectionMap.forEach((children, parentId) => {
+        if (children.has(id)) {
+          toVisit.push(parentId);
+        }
+      });
+    };
+
+    // Process all connected segments
+    while (toVisit.length > 0) {
+      const currentId = toVisit.pop()!;
+      addSegmentAndRelatives(currentId);
+    }
+
+    return related;
+  };
+
   const getNodesAndEdges = useCallback(() => {
     const nodes: Node<LesionNodeData>[] = [];
     const edges: Edge[] = [];
     const nodeMap = new Map<
       string,
-      { studyId: string; segment: Segment; position: { x: number; y: number } }
+      {
+        studyId: string;
+        segment: Segment;
+        position: { x: number; y: number };
+      }
     >();
 
     // Sort studies by date
     const sortedStudies = [...studies].sort(
       (a, b) => new Date(a.study_date).getTime() - new Date(b.study_date).getTime()
     );
+
+    // Build connection map (parent->child relationships)
+    const connectionMap = buildConnectionMap(sortedStudies);
 
     // Calculate layout dimensions
     const VERTICAL_SPACING = 120;
@@ -213,81 +287,6 @@ export function LesionFlowGraph({
       });
       studySegmentCounts.set(study.study_id, count);
     });
-
-    // First, let's modify how we build the connection map
-    const buildConnectionMap = (studies: Study[]) => {
-      const connectionMap = new Map<string, Set<string>>();
-      const parentToChildren = new Map<string, Set<string>>();
-
-      // Helper to add connection
-      const addConnection = (sourceId: string, targetId: string) => {
-        if (!connectionMap.has(sourceId)) {
-          connectionMap.set(sourceId, new Set());
-        }
-        connectionMap.get(sourceId)!.add(targetId);
-      };
-
-      // First pass: build direct connections and track parent-child relationships
-      studies.forEach(study => {
-        study.series.forEach(series => {
-          series.segmentations.forEach(segmentation => {
-            segmentation.segments.forEach(segment => {
-              segment.lesion_segments?.forEach(targetId => {
-                addConnection(segment.id, targetId);
-                addConnection(targetId, segment.id);
-
-                // Track parent-child relationship
-                if (!parentToChildren.has(segment.id)) {
-                  parentToChildren.set(segment.id, new Set());
-                }
-                parentToChildren.get(segment.id)!.add(targetId);
-              });
-            });
-          });
-        });
-      });
-
-      // Second pass: connect siblings (segments that share the same parent)
-      parentToChildren.forEach((children, _) => {
-        const childrenArray = Array.from(children);
-        // Connect all children to each other
-        for (let i = 0; i < childrenArray.length; i++) {
-          for (let j = i + 1; j < childrenArray.length; j++) {
-            addConnection(childrenArray[i], childrenArray[j]);
-            addConnection(childrenArray[j], childrenArray[i]);
-          }
-        }
-      });
-
-      return connectionMap;
-    };
-
-    const connectionMap = buildConnectionMap(sortedStudies);
-
-    // Update how we get related segments
-    const getRelatedSegments = (segmentId: string, connectionMap: Map<string, Set<string>>) => {
-      const related = new Set<string>();
-      const toVisit = [segmentId];
-      const visited = new Set<string>();
-
-      while (toVisit.length > 0) {
-        const currentId = toVisit.pop()!;
-        if (!visited.has(currentId)) {
-          visited.add(currentId);
-          const connections = connectionMap.get(currentId);
-          if (connections) {
-            connections.forEach(connectedId => {
-              related.add(connectedId);
-              if (!visited.has(connectedId)) {
-                toVisit.push(connectedId);
-              }
-            });
-          }
-        }
-      }
-
-      return related;
-    };
 
     // Get highlighted segments and related segments
     const { selectedSegments, relatedSegments } = React.useMemo(() => {
@@ -364,46 +363,44 @@ export function LesionFlowGraph({
       });
     });
 
-    // Create edges for connected segments
-    nodeMap.forEach(({ studyId, segment }) => {
-      if (segment.lesion_segments?.length > 0) {
-        segment.lesion_segments.forEach(targetId => {
-          const targetInfo = nodeMap.get(targetId);
+    // Create edges using the connection map
+    connectionMap.forEach((children, parentId) => {
+      children.forEach(childId => {
+        const parentInfo = nodeMap.get(parentId);
+        const childInfo = nodeMap.get(childId);
 
-          if (targetInfo) {
-            const { studyId: targetStudyId } = targetInfo;
-            const sourceNodeId = `${studyId}-${segment.id}`;
-            const targetNodeId = `${targetStudyId}-${targetId}`;
+        if (parentInfo && childInfo) {
+          const sourceNodeId = `${parentInfo.studyId}-${parentId}`;
+          const targetNodeId = `${childInfo.studyId}-${childId}`;
 
-            // Determine if this edge should be highlighted
-            const isHighlighted =
-              selectedSegments.has(segment.id) ||
-              selectedSegments.has(targetId) ||
-              (relatedSegments.has(segment.id) && relatedSegments.has(targetId));
+          // Determine if this edge should be highlighted
+          const isHighlighted =
+            selectedSegments.has(parentId) ||
+            selectedSegments.has(childId) ||
+            (relatedSegments.has(parentId) && relatedSegments.has(childId));
 
-            edges.push({
-              id: `e${segment.id}-${targetId}`,
-              source: sourceNodeId,
-              target: targetNodeId,
-              type: 'smoothstep',
-              animated: isHighlighted,
-              style: {
-                stroke: isHighlighted ? 'rgb(37, 99, 235)' : '#4b5563', // Blue 600 for highlighted edges
-                strokeWidth: isHighlighted ? 2.5 : 1.5,
-                opacity: isHighlighted ? 1 : 0.6,
-              },
-              sourceHandle: 'bottom',
-              targetHandle: 'top',
-              markerEnd: {
-                type: MarkerType.Arrow,
-                width: 20,
-                height: 20,
-                color: isHighlighted ? 'rgb(37, 99, 235)' : '#4b5563',
-              },
-            });
-          }
-        });
-      }
+          edges.push({
+            id: `e${parentId}-${childId}`,
+            source: sourceNodeId,
+            target: targetNodeId,
+            type: 'smoothstep',
+            animated: isHighlighted,
+            style: {
+              stroke: isHighlighted ? 'rgb(37, 99, 235)' : '#4b5563',
+              strokeWidth: isHighlighted ? 2.5 : 1.5,
+              opacity: isHighlighted ? 1 : 0.6,
+            },
+            sourceHandle: 'bottom',
+            targetHandle: 'top',
+            markerEnd: {
+              type: MarkerType.Arrow,
+              width: 20,
+              height: 20,
+              color: isHighlighted ? 'rgb(37, 99, 235)' : '#4b5563',
+            },
+          });
+        }
+      });
     });
 
     return { nodes, edges };

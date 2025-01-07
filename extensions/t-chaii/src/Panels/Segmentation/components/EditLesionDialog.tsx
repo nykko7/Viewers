@@ -20,6 +20,7 @@ import {
 import { LesionFlowGraph } from './LesionFlowGraph';
 import { useSegmentationTableContext } from '@ohif/ui-next';
 import { useSegmentationsStore } from '../../../stores/useSegmentationsStore';
+import { formatValue } from '../../../utils/formatValue';
 
 type EditLesionDialogProps = {
   open: boolean;
@@ -314,8 +315,8 @@ export function EditLesionDialog({ open, onOpenChange, segmentIndex }: EditLesio
                                     </div>
                                     <div>
                                       {group.segments.length > 1
-                                        ? `${totalVolume.toFixed(2)} (${group.segments.map(s => s.volume.toFixed(2)).join(' + ')})`
-                                        : totalVolume.toFixed(2)}
+                                        ? `${formatValue(totalVolume)} (${group.segments.map(s => formatValue(s.volume)).join(' + ')})`
+                                        : formatValue(totalVolume)}
                                     </div>
                                     <div>
                                       {group.segments

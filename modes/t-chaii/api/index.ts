@@ -57,11 +57,6 @@ const getStudySegmentations = async (studyId: string): Promise<SegmentationsResp
   const response = await fetch(
     `https://segmai.scian.cl/gateway_api/core/pipeline/api/v1/studies/segmentations/?study=${studyId}`
   );
-
-  if (!response.ok) {
-    throw new Error(`Failed to fetch segmentations: ${response.statusText}`);
-  }
-
   return response.json();
 };
 

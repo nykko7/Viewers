@@ -10,10 +10,13 @@ import {
   NodeProps,
   NodeTypes,
   NodeToolbar,
+  MarkerType,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import type { Study, Segment } from '../../../types';
 import { cn } from '@ohif/ui-next/lib/utils';
+import { formatValue } from '../../../utils/formatValue';
+import { Home } from 'lucide-react';
 
 type LesionNodeData = {
   label: string;
@@ -46,33 +49,33 @@ const CustomNode = ({ data, id }: NodeProps) => {
   const nodeData = data as LesionNodeData;
 
   const getBorderColor = () => {
-    if (nodeData.isBaseline) {
-      return 'rgb(34, 197, 94)';
-    }
     if (nodeData.isSelected) {
-      return 'rgb(37, 99, 235)';
+      return 'rgb(59, 130, 246)'; // Blue 500
     }
     if (nodeData.isRelated) {
-      return 'rgb(59, 130, 246)';
+      return 'rgb(37, 99, 235)'; // Blue 600 - darker border for related
     }
-    return 'rgb(156, 163, 175)';
+    if (nodeData.isBaseline) {
+      return 'rgb(90, 204, 230)'; // Primary light
+    }
+    return 'rgb(156, 163, 175)'; // Gray 400
   };
 
   const getBackgroundColor = () => {
     if (nodeData.isSelected) {
-      return nodeData.isBaseline ? 'rgb(34, 197, 94)' : 'rgb(37, 99, 235)';
+      return 'rgb(37, 99, 235)'; // Blue 600
     }
     if (nodeData.isBaseline) {
-      return 'rgb(220, 252, 231)';
+      return 'rgb(90, 204, 230)'; // Primary light
     }
     if (nodeData.isRelated) {
-      return 'rgb(191, 219, 254)';
+      return 'rgb(219, 234, 254)'; // Blue 100 - lighter bg for related
     }
     return 'white';
   };
 
   const getTextColor = () => {
-    if (nodeData.isSelected && !nodeData.isBaseline) {
+    if (nodeData.isSelected) {
       return 'white';
     }
     return 'black';
@@ -89,7 +92,7 @@ const CustomNode = ({ data, id }: NodeProps) => {
         <div className="space-y-1">
           <div className="text-center font-bold">{nodeData.label}</div>
           <div className="text-sm">
-            Volume: {nodeData.volume}mm<sup>3</sup>
+            Volume: {formatValue(nodeData.volume)}mm<sup>3</sup>
           </div>
           <div className="text-sm">Date: {new Date(nodeData.studyDate).toLocaleDateString()}</div>
           <div className="text-sm">Type: {nodeData.classification}</div>
@@ -102,7 +105,7 @@ const CustomNode = ({ data, id }: NodeProps) => {
           background: getBackgroundColor(),
           borderColor: getBorderColor(),
           color: getTextColor(),
-          boxShadow: nodeData.isRelated ? '0 0 0 2px rgba(59, 130, 246, 0.3)' : 'none',
+          boxShadow: nodeData.isRelated ? '0 0 0 2px rgba(37, 99, 235, 0.3)' : 'none',
         }}
         onMouseEnter={() => setIsHovered(true)}
         onMouseLeave={() => setIsHovered(false)}
@@ -139,8 +142,8 @@ const CustomNode = ({ data, id }: NodeProps) => {
 const StudyDateLabel = ({ data }: NodeProps<{ date: string; isBaseline?: boolean }>) => (
   <div
     className={cn(
-      'rounded px-3 py-1 text-center text-xs',
-      data.isBaseline ? 'bg-green-800 text-green-100' : 'bg-gray-800 text-gray-300'
+      'rounded px-3 py-1 text-center text-sm font-bold',
+      data.isBaseline ? 'bg-[rgb(90,204,230)] text-black' : 'bg-gray-800 text-gray-300'
     )}
   >
     {new Date(data.date).toLocaleDateString()}
@@ -385,17 +388,17 @@ export function LesionFlowGraph({
               type: 'smoothstep',
               animated: isHighlighted,
               style: {
-                stroke: isHighlighted ? 'rgb(130, 193, 248)' : '#4b5563', // Light blue for highlighted edges
+                stroke: isHighlighted ? 'rgb(37, 99, 235)' : '#4b5563', // Blue 600 for highlighted edges
                 strokeWidth: isHighlighted ? 2.5 : 1.5,
                 opacity: isHighlighted ? 1 : 0.6,
               },
               sourceHandle: 'bottom',
               targetHandle: 'top',
               markerEnd: {
-                type: 'arrowclosed',
+                type: MarkerType.Arrow,
                 width: 20,
                 height: 20,
-                color: isHighlighted ? 'rgb(130, 193, 248)' : '#4b5563',
+                color: isHighlighted ? 'rgb(37, 99, 235)' : '#4b5563',
               },
             });
           }
@@ -448,29 +451,20 @@ export function LesionFlowGraph({
 
 // Add Legend component
 const Legend = () => (
-  <div className="absolute right-4 top-4 rounded border border-gray-200 bg-white p-2 shadow-md">
+  <div className="bg-background text-foreground border-primary-light absolute left-4 top-4 rounded border p-2 shadow-md">
     <div className="mb-2 text-xs font-semibold">Legend</div>
     <div className="space-y-2">
       <div className="flex items-center gap-2">
-        <div className="relative h-3 w-3">
-          <div
-            className="absolute h-3 w-1.5 rounded-l-full border-y-2 border-l-2 border-blue-600 bg-blue-600"
-            style={{ left: 0 }}
-          />
-          <div
-            className="absolute h-3 w-1.5 rounded-r-full border-y-2 border-r-2 border-green-500 bg-green-500"
-            style={{ right: 0 }}
-          />
-        </div>
+        <div className="h-4 w-4 rounded-full border-2 border-[rgb(90,204,230)] bg-[rgb(90,204,230)]" />
+        <span className="text-xs">Baseline Lesion</span>
+      </div>
+      <div className="flex items-center gap-2">
+        <div className="h-4 w-4 rounded-full border-2 border-[rgb(37,99,235)] bg-[rgb(37,99,235)]" />
         <span className="text-xs">Selected Lesion</span>
       </div>
       <div className="flex items-center gap-2">
-        <div className="h-3 w-3 rounded-full border-2 border-blue-400 bg-blue-100" />
+        <div className="h-4 w-4 rounded-full border-2 border-[rgb(37,99,235)] bg-[rgb(219,234,254)]" />
         <span className="text-xs">Related Lesion</span>
-      </div>
-      <div className="flex items-center gap-2">
-        <div className="h-3 w-3 rounded-full border-2 border-green-500 bg-green-100" />
-        <span className="text-xs">Baseline Lesion</span>
       </div>
     </div>
   </div>

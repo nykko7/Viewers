@@ -1,5 +1,6 @@
 import React from 'react';
 import { affectedOrgansLabels, SegmentStatsType } from '../../../types';
+import { formatValue } from '../../../utils/formatValue';
 
 type SegmentStatsProps = {
   stats: SegmentStatsType;
@@ -49,7 +50,7 @@ export function SegmentStats({ stats, showChangeValues = true }: SegmentStatsPro
             {key === 'affected_organs'
               ? affectedOrgansLabels[stats[key]]
               : stats[key]
-                ? `${stats[key].toFixed(2)} ${value.unit}`
+                ? `${formatValue(stats[key])} ${value.unit}`
                 : '--'}{' '}
             {stats[`${key}_change`] && renderChangeValue(stats[`${key}_change`] as number)}
           </span>

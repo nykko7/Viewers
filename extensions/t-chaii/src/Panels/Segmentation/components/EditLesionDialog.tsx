@@ -113,6 +113,7 @@ export function EditLesionDialog({ open, onOpenChange, segmentIndex }: EditLesio
   );
 
   console.log('activeSegmentation', activeSegmentation);
+  console.log('studies', studies);
 
   // Get initial segment when dialog opens and find its study
   useEffect(() => {
@@ -123,7 +124,9 @@ export function EditLesionDialog({ open, onOpenChange, segmentIndex }: EditLesio
         for (const study of Object.values(studies)) {
           for (const series of study.series) {
             for (const seg of series.segmentations) {
-              const matchingSegment = seg.segments.find(s => s.label === initialSegment.label);
+              const matchingSegment = seg.segments.find(
+                s => s.id === initialSegment.cachedStats.id
+              );
               if (matchingSegment) {
                 setSelectedSegmentId(matchingSegment.id);
                 return;

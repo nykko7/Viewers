@@ -192,6 +192,9 @@ export const CustomSegmentationSegments: React.FC<{
   segmentation?: unknown;
   representation?: unknown;
 }> = ({ segmentation, representation }) => {
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [selectedSegmentIndex, setSelectedSegmentIndex] = useState<number | null>(null);
+
   const {
     activeSegmentationId,
     disableEditing,
@@ -221,9 +224,6 @@ export const CustomSegmentationSegments: React.FC<{
 
   const segmentCount = Object.keys(representationToUse.segments).length;
   const height = mode === 'collapsed' ? 'h-[600px]' : `h-[${segmentCount * 600}px]`;
-
-  const [editDialogOpen, setEditDialogOpen] = useState(false);
-  const [selectedSegmentIndex, setSelectedSegmentIndex] = useState<number | null>(null);
 
   const handleEditInfo = (segmentationId: string, segmentIndex: number) => {
     setSelectedSegmentIndex(segmentIndex);
@@ -259,10 +259,14 @@ export const CustomSegmentationSegments: React.FC<{
   // Group segments by classification
   const groupedSegments = Object.values(representationToUse.segments).reduce(
     (acc, segment) => {
-      if (!segment) return acc;
+      if (!segment) {
+        return acc;
+      }
 
       const segmentFromSegmentation = segmentationToUse.segments[segment.segmentIndex];
-      if (!segmentFromSegmentation) return acc;
+      if (!segmentFromSegmentation) {
+        return acc;
+      }
 
       // Default to 'Non-Target' if classification is not set
       const classification = segmentFromSegmentation.classification || 'Target';
@@ -278,7 +282,9 @@ export const CustomSegmentationSegments: React.FC<{
   );
 
   const renderSegmentGroup = (title: string, segments: Array<any>) => {
-    if (!segments || segments.length === 0) return null;
+    if (!segments || segments.length === 0) {
+      return null;
+    }
 
     return (
       <div className="mb-4">

@@ -34,6 +34,7 @@ export const SegmentationSegments: React.FC<{
   }
 
   const segmentCount = Object.keys(representationToUse.segments).length;
+  console.log('segmentCount', segmentCount);
   const height = mode === 'collapsed' ? 'h-[600px]' : `h-[${segmentCount * 200}px]`;
 
   return (

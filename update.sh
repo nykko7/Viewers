@@ -18,7 +18,7 @@ echo "Paso 3: Haciendo git pull..."
 sudo git pull
 
 echo "Paso 4: Borrando carpeta viewer antigua..."
-rm -rf platform/app/viewer
+sudo rm -rf platform/app/viewer
 
 echo "Paso 5: Ejecutando nx reset..."
 sudo yarn nx reset

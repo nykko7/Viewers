@@ -30,6 +30,8 @@ echo "Paso 7: Renombrando dist a viewer..."
 mv platform/app/dist platform/app/viewer
 
 echo "Paso 8: Iniciando PM2..."
-pm2 start --name "viewer" npx -- serve -c ./platform/app/public/serve.json
+pm2 start --name "viewer" npx -- serve -c /var/services/Viewers/platform/app/public/serve.json
+
+
 
 echo "¡Proceso de actualización completado!"

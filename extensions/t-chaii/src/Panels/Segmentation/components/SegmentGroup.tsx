@@ -69,6 +69,7 @@ export function SegmentGroup({
             />
           );
         })}
+      {segments.length === 0 && <div className="text-primary p-2">No lesions</div>}
     </div>
   );
 }

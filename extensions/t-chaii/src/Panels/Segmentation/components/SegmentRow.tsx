@@ -96,7 +96,7 @@ export function SegmentRow({
       <Button
         variant="outline"
         size="sm"
-        className="ml-8 mb-2"
+        className="ml-8 mb-2 mr-2"
         onClick={() => onEditInfo(segmentationId, segmentIndex)}
       >
         Edit info

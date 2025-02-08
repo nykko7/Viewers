@@ -386,7 +386,7 @@ export function LesionFlowGraph({
   };
 
   return (
-    <div style={{ height: 500 }} className="relative">
+    <div style={{ height: 500 }} className="bg-primary-dark relative">
       <ReactFlow
         nodes={nodes}
         edges={edges}
@@ -410,7 +410,7 @@ export function LesionFlowGraph({
         maxZoom={1.5}
         proOptions={{ hideAttribution: true }}
       >
-        <Background color="#2a2b2d" />
+        <Background color="#2563eb" />
         <Controls />
         <Legend />
       </ReactFlow>

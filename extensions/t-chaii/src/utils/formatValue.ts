@@ -10,5 +10,6 @@ export function formatValue(value: number | null | undefined): string {
   return value.toLocaleString(undefined, {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
+    useGrouping: true,
   });
 }

@@ -650,7 +650,8 @@ export default class HangingProtocolService extends PubSubService {
     // Todo: smart drag and drop would look at the displaySets and
     // replace the same modality type, but later
     if (protocolViewport.displaySets.length > 1) {
-      throw new Error('Cannot update viewport with multiple displaySets yet');
+      // throw new Error('Cannot update viewport with multiple displaySets yet');
+      return defaultReturn;
     }
 
     // If there is no displaySet, then we can assume that the viewport

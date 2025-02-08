@@ -20,6 +20,15 @@ function createTools(utilityModule) {
       { toolName: toolNames.StackScroll, bindings: [{ mouseButton: Enums.MouseBindings.Wheel }] },
     ],
     passive: [
+      { toolName: toolNames.Length },
+      { toolName: toolNames.Bidirectional },
+      { toolName: toolNames.ArrowAnnotate },
+      { toolName: toolNames.EllipticalROI },
+      { toolName: toolNames.CircleROI },
+      { toolName: toolNames.RectangleROI },
+      { toolName: toolNames.PlanarFreehandROI },
+      { toolName: toolNames.SplineROI },
+      { toolName: toolNames.LivewireContour },
       {
         toolName: 'CircularBrush',
         parentTool: 'Brush',

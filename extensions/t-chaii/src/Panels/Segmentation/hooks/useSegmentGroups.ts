@@ -70,7 +70,7 @@ export function useSegmentGroups(
         }
 
         // Default to 'Non-Target' if classification is not set
-        const classification = segmentFromSegmentation.classification || 'Target';
+        const classification = segmentFromSegmentation.classification || 'target';
 
         if (!acc[classification]) {
           acc[classification] = [];

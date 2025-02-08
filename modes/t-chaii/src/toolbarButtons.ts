@@ -1,7 +1,28 @@
 import type { Button } from '@ohif/core/types';
-import { ToolbarService, ViewportGridService } from '@ohif/core';
+import { ToolbarService, ViewportGridService, defaults } from '@ohif/core';
+import { WindowLevelMenuItem } from '@ohif/ui';
+import { RunCommand } from 'platform/core/src/types/Command';
+
+const { windowLevelPresets } = defaults;
 
 const { createButton } = ToolbarService;
+
+function _createWwwcPreset(preset, title, subtitle) {
+  return {
+    id: preset.toString(),
+    title,
+    subtitle,
+    commands: [
+      {
+        commandName: 'setWindowLevel',
+        commandOptions: {
+          ...windowLevelPresets[preset],
+        },
+        context: 'CORNERSTONE',
+      },
+    ],
+  };
+}
 
 const ReferenceLinesListeners: RunCommand = [
   {
@@ -19,6 +40,101 @@ export const setToolActiveToolbar = {
 
 const toolbarButtons: Button[] = [
   {
+    id: 'MeasurementTools',
+    uiType: 'ohif.splitButton',
+    props: {
+      groupId: 'MeasurementTools',
+      // group evaluate to determine which item should move to the top
+      evaluate: 'evaluate.group.promoteToPrimaryIfCornerstoneToolNotActiveInTheList',
+      primary: createButton({
+        id: 'Length',
+        icon: 'tool-length',
+        label: 'Length',
+        tooltip: 'Length Tool',
+        commands: setToolActiveToolbar,
+        evaluate: 'evaluate.cornerstoneTool',
+      }),
+      secondary: {
+        icon: 'chevron-down',
+        tooltip: 'More Measure Tools',
+      },
+      items: [
+        createButton({
+          id: 'Length',
+          icon: 'tool-length',
+          label: 'Length',
+          tooltip: 'Length Tool',
+          commands: setToolActiveToolbar,
+          evaluate: 'evaluate.cornerstoneTool',
+        }),
+        createButton({
+          id: 'Bidirectional',
+          icon: 'tool-bidirectional',
+          label: 'Bidirectional',
+          tooltip: 'Bidirectional Tool',
+          commands: setToolActiveToolbar,
+          evaluate: 'evaluate.cornerstoneTool',
+        }),
+        createButton({
+          id: 'ArrowAnnotate',
+          icon: 'tool-annotate',
+          label: 'Annotation',
+          tooltip: 'Arrow Annotate',
+          commands: setToolActiveToolbar,
+          evaluate: 'evaluate.cornerstoneTool',
+        }),
+        createButton({
+          id: 'EllipticalROI',
+          icon: 'tool-ellipse',
+          label: 'Ellipse',
+          tooltip: 'Ellipse ROI',
+          commands: setToolActiveToolbar,
+          evaluate: 'evaluate.cornerstoneTool',
+        }),
+        createButton({
+          id: 'RectangleROI',
+          icon: 'tool-rectangle',
+          label: 'Rectangle',
+          tooltip: 'Rectangle ROI',
+          commands: setToolActiveToolbar,
+          evaluate: 'evaluate.cornerstoneTool',
+        }),
+        createButton({
+          id: 'CircleROI',
+          icon: 'tool-circle',
+          label: 'Circle',
+          tooltip: 'Circle Tool',
+          commands: setToolActiveToolbar,
+          evaluate: 'evaluate.cornerstoneTool',
+        }),
+        createButton({
+          id: 'PlanarFreehandROI',
+          icon: 'icon-tool-freehand-roi',
+          label: 'Freehand ROI',
+          tooltip: 'Freehand ROI',
+          commands: setToolActiveToolbar,
+          evaluate: 'evaluate.cornerstoneTool',
+        }),
+        createButton({
+          id: 'SplineROI',
+          icon: 'icon-tool-spline-roi',
+          label: 'Spline ROI',
+          tooltip: 'Spline ROI',
+          commands: setToolActiveToolbar,
+          evaluate: 'evaluate.cornerstoneTool',
+        }),
+        createButton({
+          id: 'LivewireContour',
+          icon: 'icon-tool-livewire',
+          label: 'Livewire tool',
+          tooltip: 'Livewire tool',
+          commands: setToolActiveToolbar,
+          evaluate: 'evaluate.cornerstoneTool',
+        }),
+      ],
+    },
+  },
+  {
     id: 'Zoom',
     uiType: 'ohif.radioGroup',
     props: {
@@ -28,14 +144,42 @@ const toolbarButtons: Button[] = [
       evaluate: 'evaluate.cornerstoneTool',
     },
   },
+  // {
+  //   id: 'WindowLevel',
+  //   uiType: 'ohif.radioGroup',
+  //   props: {
+  //     icon: 'tool-window-level',
+  //     label: 'Window Level',
+  //     commands: setToolActiveToolbar,
+  //     evaluate: 'evaluate.cornerstoneTool',
+  //   },
+  // },
   {
     id: 'WindowLevel',
-    uiType: 'ohif.radioGroup',
+    uiType: 'ohif.splitButton',
     props: {
-      icon: 'tool-window-level',
-      label: 'Window Level',
-      commands: setToolActiveToolbar,
-      evaluate: 'evaluate.cornerstoneTool',
+      groupId: 'WindowLevel',
+      primary: createButton({
+        id: 'WindowLevel',
+        icon: 'tool-window-level',
+        label: 'Window Level',
+        tooltip: 'Window Level',
+        commands: setToolActiveToolbar,
+        evaluate: 'evaluate.cornerstoneTool',
+      }),
+      secondary: {
+        icon: 'chevron-down',
+        label: 'W/L Manual',
+        tooltip: 'W/L Presets',
+      },
+      renderer: WindowLevelMenuItem,
+      items: [
+        _createWwwcPreset(1, 'Soft tissue', '400 / 40'),
+        _createWwwcPreset(2, 'Lung', '1500 / -600'),
+        _createWwwcPreset(3, 'Liver', '150 / 90'),
+        _createWwwcPreset(4, 'Bone', '2500 / 480'),
+        _createWwwcPreset(5, 'Brain', '80 / 40'),
+      ],
     },
   },
   {

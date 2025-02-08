@@ -13,30 +13,30 @@ const defaultProtocol = {
     //   },
     // },
   ],
-  // defaultViewport: {
-  //   viewportOptions: {
-  //     viewportType: 'stack',
-  //     toolGroupId: 'default',
-  //     allowUnmatchedView: true,
-  //     syncGroups: [
-  //       {
-  //         type: 'hydrateseg',
-  //         id: 'sameFORId',
-  //         source: true,
-  //         target: true,
-  //         // options: {
-  //         //   matchingRules: ['sameFOR'],
-  //         // },
-  //       },
-  //     ],
-  //   },
-  //   displaySets: [
-  //     {
-  //       id: 'segDisplaySet',
-  //       matchedDisplaySetsIndex: -1,
-  //     },
-  //   ],
-  // },
+  defaultViewport: {
+    viewportOptions: {
+      viewportType: 'stack',
+      toolGroupId: 'default',
+      allowUnmatchedView: true,
+      syncGroups: [
+        {
+          type: 'hydrateseg',
+          id: 'sameFORId',
+          source: true,
+          target: true,
+          // options: {
+          //   matchingRules: ['sameFOR'],
+          // },
+        },
+      ],
+    },
+    displaySets: [
+      {
+        id: 'segDisplaySet',
+        matchedDisplaySetsIndex: -1,
+      },
+    ],
+  },
   toolGroupIds: ['default'],
   displaySetSelectors: {
     ctDisplaySet: {

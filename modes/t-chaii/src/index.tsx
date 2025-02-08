@@ -67,6 +67,7 @@ function modeFactory({ modeConfiguration }) {
 
       // Add toolbar buttons
       toolbarService.createButtonSection('primary', [
+        'MeasurementTools',
         'WindowLevel',
         'Pan',
         'Zoom',
@@ -108,12 +109,34 @@ function modeFactory({ modeConfiguration }) {
           return;
         }
 
-        console.log('Viewport data:', viewportData);
+        // Wait for the viewport to be ready
+        const waitForViewport = async () => {
+          const maxAttempts = 10;
+          let attempts = 0;
 
-        console.log(
-          'displaySets:',
-          displaySetService.getDisplaySetByUID(viewportData.data[0].displaySetInstanceUID)
-        );
+          while (attempts < maxAttempts) {
+            try {
+              const viewport = cornerstoneViewportService.getCornerstoneViewport(viewportId);
+              const renderingEngine = cornerstoneViewportService.getRenderingEngine();
+
+              if (viewport && renderingEngine && renderingEngine.getViewport(viewportId)) {
+                return true;
+              }
+            } catch (error) {
+              console.debug('Waiting for viewport to be ready...', error);
+            }
+
+            await new Promise(resolve => setTimeout(resolve, 100));
+            attempts++;
+          }
+          return false;
+        };
+
+        const isViewportReady = await waitForViewport();
+        if (!isViewportReady) {
+          console.warn('Viewport not ready after maximum attempts');
+          return;
+        }
 
         const displaySets = viewportData.data.map(data =>
           displaySetService.getDisplaySetByUID(data.displaySetInstanceUID)
@@ -150,7 +173,6 @@ function modeFactory({ modeConfiguration }) {
               segDisplaySet.referencedSeriesInstanceUID,
               segment.label
             );
-          console.log(segmentInfo);
 
           if (segmentInfo) {
             updatedSegments[segmentIndex] = {
@@ -166,13 +188,17 @@ function modeFactory({ modeConfiguration }) {
           }
         }
 
-        // Update the segmentation with new segment data
-        const updatedSegmentation = {
-          ...segmentation,
-          segments: updatedSegments,
-        };
+        try {
+          // Update the segmentation with new segment data
+          const updatedSegmentation = {
+            ...segmentation,
+            segments: updatedSegments,
+          };
 
-        segmentationService.addOrUpdateSegmentation(updatedSegmentation);
+          segmentationService.addOrUpdateSegmentation(updatedSegmentation);
+        } catch (error) {
+          console.warn('Error updating segmentation:', error);
+        }
       };
 
       // Subscribe to viewport changes
@@ -191,6 +217,23 @@ function modeFactory({ modeConfiguration }) {
           mode: 'expanded',
         },
       ]);
+
+      // Get the complete active protocol object
+      const activeProtocol = hangingProtocolService.getActiveProtocol();
+      console.log('Active Protocol:', activeProtocol);
+
+      // Alternatively, get a simplified state object that includes the protocol ID, stage index, and active study UID
+      const protocolState = hangingProtocolService.getState();
+      console.log('Protocol State:', protocolState);
+
+      const unsubscribeHangingProtocol = hangingProtocolService.subscribe(
+        hangingProtocolService.EVENTS.PROTOCOL_CHANGED,
+        () => {
+          console.log('Protocol changed to:', hangingProtocolService.getActiveProtocol());
+        }
+      );
+
+      unsubscriptions.push(unsubscribeHangingProtocol.unsubscribe);
     },
 
     onModeExit: ({ servicesManager }: withAppTypes) => {

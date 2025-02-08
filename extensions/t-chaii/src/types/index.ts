@@ -11,8 +11,10 @@ export type SegmentStatsType = {
 };
 
 export const affectedOrgansLabels: Record<string, string> = {
-  'Right lung': 'Right Lung',
-  'Left lung': 'Left Lung',
-  Liver: 'Liver',
-  Brain: 'Brain',
+  right_lung: 'Right Lung',
+  left_lung: 'Left Lung',
+  liver: 'Liver',
+  brain: 'Brain',
+  test: 'Test',
+  other: 'Other',
 };

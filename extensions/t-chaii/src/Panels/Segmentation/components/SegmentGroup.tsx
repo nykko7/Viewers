@@ -37,7 +37,7 @@ export function SegmentGroup({
   className,
 }: SegmentGroupProps) {
   return (
-    <div className={cn('mb-4', className)}>
+    <div className={cn('mb-2', className)}>
       <h3 className="text-primary-light p-2 text-lg font-semibold">{title}:</h3>
       {segments &&
         segments.length >= 0 &&

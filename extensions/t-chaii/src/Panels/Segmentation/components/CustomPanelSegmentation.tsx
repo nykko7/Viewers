@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useMemo } from 'react';
 import { Button, SegmentationTable } from '@ohif/ui-next';
 import { useActiveViewportSegmentationRepresentations } from '@ohif/extension-cornerstone';
 import { getRenderingEngine, getEnabledElement } from '@cornerstonejs/core';
@@ -6,6 +6,7 @@ import { CustomSegmentationSegments } from './CustomSegmentationSegments';
 import { useSegmentHandlers } from '../hooks/useSegmentHandlers';
 import { metaData } from '@cornerstonejs/core';
 import { Types } from '@ohif/core';
+import { formatValue } from '../../../utils/formatValue';
 
 type CustomPanelSegmentationProps = {
   servicesManager: Types.Extensions.ExtensionParams['servicesManager'];
@@ -88,6 +89,28 @@ export function CustomPanelSegmentation({
     };
   });
 
+  // Calculate total volume and diameter
+  const { totalVolume, maxDiameter } = useMemo(() => {
+    let volume = 0;
+    let maxDiam = 0;
+
+    segmentationsWithRepresentations.forEach(({ segmentation }) => {
+      Object.values(segmentation.segments).forEach(segment => {
+        if (segment && typeof segment.cachedStats?.volume === 'number') {
+          volume += segment.cachedStats.volume;
+        }
+        if (segment && typeof segment.cachedStats?.diameter === 'number') {
+          maxDiam = Math.max(maxDiam, segment.cachedStats.diameter);
+        }
+      });
+    });
+
+    return {
+      totalVolume: volume,
+      maxDiameter: maxDiam,
+    };
+  }, [segmentationsWithRepresentations]);
+
   const handleSaveChanges = () => {
     console.log('save changes');
   };
@@ -152,10 +175,10 @@ export function CustomPanelSegmentation({
           <div className="bg-secondary-dark text-secondary-foreground grid grid-cols-2 gap-2 p-2">
             <span>Total volume:</span>
             <span className="text-right font-bold">
-              0 mm<sup>3</sup>
+              {formatValue(totalVolume)} mm<sup>3</sup>
             </span>
             <span>Total diameter:</span>
-            <span className="text-right font-bold">0 mm</span>
+            <span className="text-right font-bold">{formatValue(maxDiameter)} mm</span>
           </div>
 
           <Button

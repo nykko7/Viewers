@@ -111,7 +111,6 @@ export function CustomSegmentationSegments({
           onSelect={onSegmentClick}
           onRename={onSegmentEdit}
           onDelete={onSegmentDelete}
-          className="mb-2"
         />
       </ScrollArea>
 

@@ -99,7 +99,7 @@ export function SegmentRow({
         className="ml-8 mb-2 mr-2"
         onClick={() => onEditInfo(segmentationId, segmentIndex)}
       >
-        Edit info
+        Details
       </Button>
     </div>
   );

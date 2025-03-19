@@ -48,7 +48,7 @@ export function SegmentStats({ stats, showChangeValues = true }: SegmentStatsPro
           <span className="flex-1">{value.label}:</span>
           <span className="flex-1 font-bold">
             {key === 'affected_organs'
-              ? affectedOrgansLabels[stats[key]]
+              ? (affectedOrgansLabels[stats[key]] ?? 'Unknown')
               : stats[key]
                 ? `${formatValue(stats[key])} ${value.unit}`
                 : '--'}{' '}

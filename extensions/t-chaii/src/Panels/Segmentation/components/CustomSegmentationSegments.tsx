@@ -72,7 +72,7 @@ export function CustomSegmentationSegments({
       >
         <SegmentGroup
           title="Target Lesions"
-          segments={groupedSegments['target'] || []}
+          segments={groupedSegments['Target'] || []}
           segmentationId={segmentationIdToUse}
           disableEditing={disableEditing}
           representationType={representationToUse.type}
@@ -86,7 +86,7 @@ export function CustomSegmentationSegments({
         />
         <SegmentGroup
           title="Non-Target Lesions"
-          segments={groupedSegments['non-target'] || []}
+          segments={groupedSegments['Non-Target'] || []}
           segmentationId={segmentationIdToUse}
           disableEditing={disableEditing}
           representationType={representationToUse.type}
@@ -100,7 +100,7 @@ export function CustomSegmentationSegments({
         />
         <SegmentGroup
           title="New Lesions"
-          segments={groupedSegments['new_lesion'] || []}
+          segments={groupedSegments['New Lesion'] || []}
           segmentationId={segmentationIdToUse}
           disableEditing={disableEditing}
           representationType={representationToUse.type}

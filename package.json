@@ -65,7 +65,8 @@
     "start:prod": "npx serve ./viewer -c ../public/serve.json"
   },
   "dependencies": {
-    "execa": "^8.0.1"
+    "execa": "^8.0.1",
+    "react-hook-form": "^7.54.2"
   },
   "optionalDependencies": {
     "@percy/cypress": "^3.1.1",

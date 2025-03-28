@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useForm } from 'react-hook-form';
 import {
   Button,
   Input,
@@ -16,6 +17,14 @@ import {
   SelectGroup,
   TooltipProvider,
   DialogDescription,
+  Command,
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+  Card,
+  CardHeader,
+  CardTitle,
+  CardContent,
 } from '@ohif/ui-next';
 import { LesionFlowGraph } from './LesionFlowGraph';
 import { useSegmentationTableContext } from '@ohif/ui-next';
@@ -24,6 +33,16 @@ import { formatValue } from '../../../utils/formatValue';
 import { useLesionTrajectory } from '../hooks/useLesionTrajectory';
 import { cn } from '@ohif/ui-next/lib/utils';
 import { buildConnectionMap } from '../utils/buildConnectionMap';
+import {
+  affectedOrgansLabels,
+  Study,
+  Segment,
+  lesionTypeLabels,
+  lesionClassificationLabels,
+} from '../../../types';
+
+import { Check, ChevronsUpDown } from 'lucide-react';
+import { CommandEmpty, CommandInput, CommandList, CommandGroup, CommandItem } from '@ohif/ui-next';
 
 type EditLesionDialogProps = {
   open: boolean;
@@ -31,17 +50,24 @@ type EditLesionDialogProps = {
   segmentIndex: number;
 };
 
-// Add this type to help with measurement grouping
-type MeasurementGroup = {
-  segments: Segment[];
-  parentSegment?: Segment;
-  isSelected: boolean;
+type Segmentation = {
+  segmentationId: string;
+  segments: Array<{
+    label: string;
+    cachedStats: {
+      id: string;
+    };
+  }>;
 };
 
 // Add a helper component for the study group
 type StudyGroupRowsProps = {
   study: Study;
-  segments: SegmentWithStudy[];
+  segments: Array<{
+    segment: Segment;
+    isSplit?: boolean;
+    isMerge?: boolean;
+  }>;
   totalVolume: number;
   onSegmentSelect: (segmentId: string) => void;
   selectedSegmentId: string | null;
@@ -102,6 +128,13 @@ function StudyGroupRows({
   );
 }
 
+type FormValues = {
+  label: string;
+  affected_organs: string;
+  lession_type: 'Mass' | 'Other' | 'Lymph';
+  lession_classification: 'Target' | 'Non-Target' | 'New lession';
+};
+
 export function EditLesionDialog({ open, onOpenChange, segmentIndex }: EditLesionDialogProps) {
   const { data, activeSegmentationId } = useSegmentationTableContext('SegmentationTable.Segments');
   const studies = useSegmentationsStore(state => state.getStudies());
@@ -112,31 +145,83 @@ export function EditLesionDialog({ open, onOpenChange, segmentIndex }: EditLesio
     item => item.segmentation.segmentationId === activeSegmentationId
   );
 
-  console.log('activeSegmentation', activeSegmentation);
-  console.log('studies', studies);
+  const defaultValues = React.useMemo(
+    () => ({
+      label: `Segment ${segmentIndex + 1}`,
+      affected_organs: '',
+      lession_type: 'Mass' as const,
+      lession_classification: 'New Lesion' as const,
+    }),
+    [segmentIndex]
+  );
 
-  // Get initial segment when dialog opens and find its study
+  const {
+    register,
+    handleSubmit,
+    setValue,
+    watch,
+    reset,
+    formState: { isDirty },
+  } = useForm<FormValues>({
+    defaultValues,
+  });
+
+  // Reset form and selected segment when dialog opens/closes or segment changes
   useEffect(() => {
+    if (!open) {
+      setSelectedSegmentId(null);
+      reset();
+      return;
+    }
+
     if (open && activeSegmentation) {
       const initialSegment = activeSegmentation.segmentation.segments[segmentIndex];
       if (initialSegment) {
         // Find segment ID in studies by matching the label
         for (const study of Object.values(studies)) {
+          if (!study.series) {
+            continue;
+          }
+
           for (const series of study.series) {
+            if (!series.segmentations) {
+              continue;
+            }
+
             for (const seg of series.segmentations) {
+              if (!seg.segments) {
+                continue;
+              }
+
               const matchingSegment = seg.segments.find(
                 s => s.id === initialSegment.cachedStats.id
               );
               if (matchingSegment) {
                 setSelectedSegmentId(matchingSegment.id);
+                setValue('label', matchingSegment.label || defaultValues.label);
+                setValue('affected_organs', matchingSegment.affected_organs || '');
+                setValue(
+                  'lession_type',
+                  (matchingSegment.lession_type || defaultValues.lession_type) as
+                    | 'Mass'
+                    | 'Other'
+                    | 'Lymph'
+                );
+                setValue(
+                  'lession_classification',
+                  (matchingSegment.lession_classification ||
+                    defaultValues.lession_classification) as 'Target' | 'Non-Target' | 'New lession'
+                );
                 return;
               }
             }
           }
         }
       }
+      // Reset to default values if no matching segment is found
+      reset(defaultValues);
     }
-  }, [open, segmentIndex, activeSegmentation, studies]);
+  }, [open, activeSegmentation, segmentIndex, studies, reset, setValue, defaultValues]);
 
   // Get current segment and its study data
   const { currentSegment, segmentStudy } = React.useMemo(() => {
@@ -146,8 +231,20 @@ export function EditLesionDialog({ open, onOpenChange, segmentIndex }: EditLesio
     // First try to get selected segment from studies
     if (selectedSegmentId) {
       for (const study of Object.values(studies)) {
+        if (!study.series) {
+          continue;
+        }
+
         for (const series of study.series) {
+          if (!series.segmentations) {
+            continue;
+          }
+
           for (const seg of series.segmentations) {
+            if (!seg.segments) {
+              continue;
+            }
+
             const segment = seg.segments.find(s => s.id === selectedSegmentId);
             if (segment) {
               foundSegment = segment;
@@ -170,8 +267,20 @@ export function EditLesionDialog({ open, onOpenChange, segmentIndex }: EditLesio
       const initialLabel = activeSegmentation.segmentation.segments[segmentIndex]?.label;
 
       for (const study of Object.values(studies)) {
+        if (!study.series) {
+          continue;
+        }
+
         for (const series of study.series) {
+          if (!series.segmentations) {
+            continue;
+          }
+
           for (const seg of series.segmentations) {
+            if (!seg.segments) {
+              continue;
+            }
+
             const segment = seg.segments.find(s => s.label === initialLabel);
             if (segment) {
               foundSegment = segment;
@@ -195,200 +304,268 @@ export function EditLesionDialog({ open, onOpenChange, segmentIndex }: EditLesio
     };
   }, [selectedSegmentId, studies, activeSegmentation, segmentIndex]);
 
-  // Handle form changes
-  const handleInputChange = (field: string, value: string) => {
-    // TODO: Implement save functionality
-    console.log('Field changed:', field, value);
-  };
+  // Cleanup effect when component unmounts
+  useEffect(() => {
+    return () => {
+      setSelectedSegmentId(null);
+      reset();
+    };
+  }, [reset]);
 
-  // Update the segment filtering logic to properly handle relationships
-  const getRelatedSegments = (currentSegment: Segment | null, study: Study): MeasurementGroup[] => {
-    if (!currentSegment) {
-      return [];
-    }
-
-    const groups: MeasurementGroup[] = [];
-    const processedSegments = new Set<string>();
-
-    study.series.forEach(series => {
-      series.segmentations.forEach(segmentation => {
-        // Find segments that are related to current segment
-        const relatedSegments = segmentation.segments.filter(s => {
-          // Direct relationship (current segment points to this one or vice versa)
-          const isDirectlyRelated =
-            s.id === currentSegment.id ||
-            s.lesion_segments?.includes(currentSegment.id) ||
-            currentSegment.lesion_segments?.includes(s.id);
-
-          // Sibling relationship (share same parent)
-          const isSibling = segmentation.segments.some(
-            parentSegment =>
-              parentSegment.lesion_segments?.includes(s.id) &&
-              parentSegment.lesion_segments?.includes(currentSegment.id)
-          );
-
-          return isDirectlyRelated || isSibling;
-        });
-
-        if (relatedSegments.length > 0) {
-          groups.push({
-            segments: relatedSegments,
-            isSelected: relatedSegments.some(s => s.id === currentSegment.id),
-          });
-        }
-      });
+  const onSubmit = (data: FormValues) => {
+    console.log('Form submitted:', {
+      ...data,
+      lession_type: data.lession_type as 'Mass' | 'Other' | 'Lymph',
+      lession_classification: data.lession_classification as
+        | 'Target'
+        | 'Non-Target'
+        | 'New lession',
     });
-
-    return groups;
+    // TODO: Implement save functionality
+    onOpenChange(false);
   };
 
   const connectionMap = buildConnectionMap(Object.values(studies));
   const trajectory = useLesionTrajectory(Object.values(studies), currentSegment?.id, connectionMap);
 
+  const hasHistory = trajectory.length > 0;
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-screen-xl">
-        <TooltipProvider>
-          <DialogHeader>
-            <DialogTitle className="text-primary-light">Lesion Information</DialogTitle>
-            <DialogDescription>
-              {currentSegment?.label} -{' '}
-              {segmentStudy
-                ? new Date(segmentStudy.study_date).toLocaleDateString()
-                : 'Unknown date'}
-            </DialogDescription>
-          </DialogHeader>
+        <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col gap-4">
+          <TooltipProvider>
+            <DialogHeader>
+              <DialogTitle className="text-primary-light">Lesion Information</DialogTitle>
+              <DialogDescription>
+                {currentSegment?.label} -{' '}
+                {segmentStudy
+                  ? new Date(segmentStudy.study_date).toLocaleDateString()
+                  : 'Unknown date'}
+              </DialogDescription>
+            </DialogHeader>
 
-          <div className="grid grid-cols-2 gap-8">
-            {/* Left column - Form */}
-            <div className="space-y-4">
-              <div className="space-y-2">
-                <Label>Name:</Label>
-                <Input
-                  value={currentSegment?.label || ''}
-                  onChange={e => handleInputChange('label', e.target.value)}
-                />
-              </div>
+            <div className="grid grid-cols-2 gap-8">
+              {/* Left column - Form */}
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <Label>Name:</Label>
+                  <Input {...register('label')} />
+                </div>
 
-              <div className="space-y-2">
-                <Label>Affected Organ:</Label>
-                <Select
-                  value={currentSegment?.affected_organs || 'other'}
-                  onValueChange={value => handleInputChange('affected_organs', value)}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectGroup>
-                      <SelectItem value="right_lung">Right lung</SelectItem>
-                      <SelectItem value="left_lung">Left lung</SelectItem>
-                      <SelectItem value="liver">Liver</SelectItem>
-                      <SelectItem value="brain">Brain</SelectItem>
-                      <SelectItem value="test">Test</SelectItem>
-                      <SelectItem value="other">Other</SelectItem>
-                    </SelectGroup>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-2">
-                <Label>Type:</Label>
-                <Select
-                  value={currentSegment?.lession_type?.toLowerCase() || 'mass'}
-                  onValueChange={value => handleInputChange('lession_type', value)}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectGroup>
-                      <SelectItem value="mass">Mass</SelectItem>
-                      <SelectItem value="lymph_node">Lymph Node</SelectItem>
-                      <SelectItem value="metastasis">Metastasis</SelectItem>
-                      <SelectItem value="other">Other</SelectItem>
-                    </SelectGroup>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-2">
-                <Label>Classification:</Label>
-                <Select
-                  value={currentSegment?.lession_classification?.toLowerCase() || 'target'}
-                  onValueChange={value => handleInputChange('lession_classification', value)}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectGroup>
-                      <SelectItem value="target">Target</SelectItem>
-                      <SelectItem value="non-target">Non-Target</SelectItem>
-                      <SelectItem value="new-lesion">New Lesion</SelectItem>
-                    </SelectGroup>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-2">
-                <Label>Measurements History:</Label>
-                <div className="overflow-hidden rounded border">
-                  <div className="min-w-full divide-y divide-gray-200">
-                    {/* Table header */}
-                    <div className="bg-secondary-dark border-secondary-light">
-                      <div className="text-secondary-foreground grid grid-cols-6 gap-4 px-4 py-3 text-sm font-semibold">
-                        <div>Date</div>
-                        <div>Segment</div>
-                        <div>Volume (mm³)</div>
-                        <div>Axial Diameter (mm)</div>
-                        <div>Coronal Diameter (mm)</div>
-                        <div>Sagittal Diameter (mm)</div>
-                      </div>
-                    </div>
-
-                    {/* Table body */}
-                    <div className="divide-y divide-gray-200">
-                      {trajectory.map(({ study, segments, totalVolume }) => (
-                        <StudyGroupRows
-                          key={study.study_id}
-                          study={study}
-                          segments={segments}
-                          totalVolume={totalVolume}
-                          onSegmentSelect={setSelectedSegmentId}
-                          selectedSegmentId={selectedSegmentId}
-                        />
-                      ))}
-                    </div>
+                <div className="space-y-2">
+                  <Label>Affected Organ:</Label>
+                  <div className="relative w-full">
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          role="combobox"
+                          className={cn(
+                            'w-full justify-between text-white hover:text-white',
+                            !watch('affected_organs') && 'text-muted-foreground'
+                          )}
+                        >
+                          {watch('affected_organs')
+                            ? Object.entries(affectedOrgansLabels).find(
+                                ([value]) => value === watch('affected_organs')
+                              )?.[1]
+                            : 'Select organ...'}
+                          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent
+                        align="start"
+                        className="w-[var(--radix-popover-trigger-width)] p-0"
+                        sideOffset={4}
+                      >
+                        <Command className="w-full">
+                          <CommandInput placeholder="Search organ..." className="h-9" />
+                          <CommandList
+                            className="max-h-[300px] overflow-y-auto"
+                            onWheel={e => e.stopPropagation()}
+                          >
+                            <CommandEmpty>No organ found.</CommandEmpty>
+                            <CommandGroup>
+                              {Object.entries(affectedOrgansLabels)
+                                .reduce(
+                                  (unique, [value, label]) => {
+                                    if (
+                                      !unique.some(([_, existingLabel]) => existingLabel === label)
+                                    ) {
+                                      unique.push([value, label]);
+                                    }
+                                    return unique;
+                                  },
+                                  [] as [string, string][]
+                                )
+                                .sort((a, b) => a[1].localeCompare(b[1]))
+                                .map(([value, label]) => (
+                                  <CommandItem
+                                    value={label}
+                                    key={value}
+                                    onSelect={() => {
+                                      setValue('affected_organs', value, { shouldDirty: true });
+                                    }}
+                                    className="cursor-pointer"
+                                  >
+                                    {label}
+                                    <Check
+                                      className={cn(
+                                        'ml-auto h-4 w-4',
+                                        watch('affected_organs') === value
+                                          ? 'opacity-100'
+                                          : 'opacity-0'
+                                      )}
+                                    />
+                                  </CommandItem>
+                                ))}
+                            </CommandGroup>
+                          </CommandList>
+                        </Command>
+                      </PopoverContent>
+                    </Popover>
                   </div>
                 </div>
+
+                <div className="space-y-2">
+                  <Label>Type:</Label>
+                  <Select
+                    value={watch('lession_type')}
+                    onValueChange={value =>
+                      setValue('lession_type', value as 'Mass' | 'Other' | 'Lymph', {
+                        shouldDirty: true,
+                      })
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectGroup>
+                        {Object.entries(lesionTypeLabels).map(([value, label]) => (
+                          <SelectItem key={value} value={value}>
+                            {label}
+                          </SelectItem>
+                        ))}
+                      </SelectGroup>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Classification:</Label>
+                  <Select
+                    value={watch('lession_classification')}
+                    onValueChange={value =>
+                      setValue(
+                        'lession_classification',
+                        value as 'Target' | 'Non-Target' | 'New lession',
+                        { shouldDirty: true }
+                      )
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectGroup>
+                        {Object.entries(lesionClassificationLabels).map(([value, label]) => (
+                          <SelectItem key={value} value={value}>
+                            {label}
+                          </SelectItem>
+                        ))}
+                      </SelectGroup>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {hasHistory ? (
+                  <div className="space-y-2">
+                    <Label>Measurements History:</Label>
+                    <div className="overflow-hidden rounded border">
+                      <div className="min-w-full divide-y divide-gray-200">
+                        {/* Table header */}
+                        <div className="bg-secondary-dark border-secondary-light">
+                          <div className="text-secondary-foreground grid grid-cols-6 gap-4 px-4 py-3 text-sm font-semibold">
+                            <div>Date</div>
+                            <div>Segment</div>
+                            <div>Volume (mm³)</div>
+                            <div>Axial Diameter (mm)</div>
+                            <div>Coronal Diameter (mm)</div>
+                            <div>Sagittal Diameter (mm)</div>
+                          </div>
+                        </div>
+
+                        {/* Table body */}
+                        <div className="divide-y divide-gray-200">
+                          {trajectory.map(({ study, segments, totalVolume }) => (
+                            <StudyGroupRows
+                              key={study.study_id}
+                              study={study}
+                              segments={segments}
+                              totalVolume={totalVolume}
+                              onSegmentSelect={setSelectedSegmentId}
+                              selectedSegmentId={selectedSegmentId}
+                            />
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <Card>
+                    <CardHeader>
+                      <CardTitle>No Measurements History</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <p className="text-muted-foreground">
+                        This lesion doesn&apos;t have any measurements history yet.
+                      </p>
+                    </CardContent>
+                  </Card>
+                )}
+              </div>
+
+              {/* Right column - Graph */}
+              <div className="space-y-2 border-l pl-4">
+                <Label>Lesion Relationships:</Label>
+                {hasHistory ? (
+                  <div className="border-input rounded-lg border">
+                    <LesionFlowGraph
+                      studies={Object.values(studies)}
+                      currentStudyId={segmentStudy?.study_id || ''}
+                      selectedSegmentId={currentSegment?.id}
+                      onSegmentSelect={setSelectedSegmentId}
+                      baselineStudyId={Object.values(studies)[0]?.study_id}
+                    />
+                  </div>
+                ) : (
+                  <Card>
+                    <CardHeader>
+                      <CardTitle>No Relationships</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <p className="text-muted-foreground">
+                        This lesion doesn&apos;t have any relationships with other lesions yet.
+                      </p>
+                    </CardContent>
+                  </Card>
+                )}
               </div>
             </div>
 
-            {/* Right column - Graph */}
-            <div className="space-y-2 border-l pl-4">
-              <Label>Lesion Relationships:</Label>
-              <div className="border-input rounded-lg border">
-                <LesionFlowGraph
-                  studies={Object.values(studies)}
-                  currentStudyId={segmentStudy?.study_id || ''}
-                  selectedSegmentId={currentSegment?.id}
-                  onSegmentSelect={setSelectedSegmentId}
-                  baselineStudyId={Object.values(studies)[0]?.study_id}
-                />
-              </div>
-            </div>
-          </div>
-
-          <DialogFooter>
-            <Button onClick={() => onOpenChange(false)} variant="outline" size="lg">
-              Cancel
-            </Button>
-            <Button onClick={() => onOpenChange(false)} variant="default" size="lg">
-              Confirm
-            </Button>
-          </DialogFooter>
-        </TooltipProvider>
+            <DialogFooter>
+              <Button onClick={() => onOpenChange(false)} variant="outline" size="lg" type="button">
+                Cancel
+              </Button>
+              <Button variant="default" size="lg" type="submit" disabled={!isDirty}>
+                Save Changes
+              </Button>
+            </DialogFooter>
+          </TooltipProvider>
+        </form>
       </DialogContent>
     </Dialog>
   );

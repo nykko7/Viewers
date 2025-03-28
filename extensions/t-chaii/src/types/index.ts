@@ -8,6 +8,20 @@ export type SegmentStatsType = {
   affected_organs: string;
   volume_change?: number;
   diameter_change?: number;
+  lession_classification: string;
+  lession_type: string;
+};
+
+export const lesionClassificationLabels: Record<string, string> = {
+  Target: 'Target',
+  'Non-Target': 'Non-Target',
+  'New Lesion': 'New Lesion',
+};
+
+export const lesionTypeLabels: Record<string, string> = {
+  Mass: 'Mass',
+  Lymph: 'Lymph Node',
+  Other: 'Other',
 };
 
 export const affectedOrgansLabels: Record<string, string> = {
@@ -136,4 +150,5 @@ export const affectedOrgansLabels: Record<string, string> = {
   heart_atrium_right: 'Heart',
   heart_ventricle_right: 'Heart',
   pulmonary_artery: 'Heart',
+  unknown: 'Unknown',
 };

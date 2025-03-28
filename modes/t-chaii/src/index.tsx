@@ -183,6 +183,8 @@ function modeFactory({ modeConfiguration }) {
                 volume: segmentInfo.volume,
                 diameter: segmentInfo.axial_diameter,
                 affected_organs: segmentInfo.affected_organs,
+                lession_classification: segmentInfo.lession_classification,
+                lession_type: segmentInfo.lession_type,
               },
             };
           }

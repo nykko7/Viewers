@@ -4,7 +4,6 @@ type Segment = {
   segmentIndex: number;
   color: [number, number, number];
   visible: boolean;
-  classification?: string;
   lesion_segments?: string[]; // Parent IDs
 };
 
@@ -15,8 +14,9 @@ type SegmentFromSegmentation = {
   label: string;
   displayText: string;
   cachedStats: any;
-  classification?: string;
   lesion_segments?: string[]; // Parent IDs
+  lession_classification: string;
+  lession_type: string;
 };
 
 export function useSegmentGroups(
@@ -58,6 +58,8 @@ export function useSegmentGroups(
     };
 
     // Group segments by classification and track relationships
+
+    console.log('segmentations', segmentations);
     return Object.values(segments).reduce(
       (acc, segment) => {
         if (!segment) {
@@ -69,17 +71,29 @@ export function useSegmentGroups(
           return acc;
         }
 
-        // Default to 'Non-Target' if classification is not set
-        const classification = segmentFromSegmentation.classification || 'target';
+        // Default to 'New Lesion' if classification is not set
+        const classification =
+          segmentFromSegmentation.cachedStats.lession_classification || 'New Lesion';
+        const type = segmentFromSegmentation.cachedStats.lession_type || 'Mass';
 
         if (!acc[classification]) {
           acc[classification] = [];
+        }
+
+        if (!acc[type]) {
+          acc[type] = [];
         }
 
         // Get all ancestors for this segment
         const ancestors = getAncestors(segmentFromSegmentation.id);
 
         acc[classification].push({
+          segment,
+          segmentFromSegmentation,
+          ancestors: Array.from(ancestors),
+        });
+
+        acc[type].push({
           segment,
           segmentFromSegmentation,
           ancestors: Array.from(ancestors),

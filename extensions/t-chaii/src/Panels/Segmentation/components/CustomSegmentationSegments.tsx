@@ -70,48 +70,71 @@ export function CustomSegmentationSegments({
         className={cn(`ohif-scrollbar invisible-scrollbar bg-bkg-low space-y-px ${height}`)}
         showArrows={true}
       >
-        <SegmentGroup
-          title="Target Lesions"
-          segments={groupedSegments['Target'] || []}
-          segmentationId={segmentationIdToUse}
-          disableEditing={disableEditing}
-          representationType={representationToUse.type}
-          onEditInfo={handleEditInfo}
-          onSegmentColorClick={onSegmentColorClick}
-          onToggleVisibility={onToggleSegmentVisibility}
-          onToggleLock={onToggleSegmentLock}
-          onSelect={onSegmentClick}
-          onRename={onSegmentEdit}
-          onDelete={onSegmentDelete}
-        />
-        <SegmentGroup
-          title="Non-Target Lesions"
-          segments={groupedSegments['Non-Target'] || []}
-          segmentationId={segmentationIdToUse}
-          disableEditing={disableEditing}
-          representationType={representationToUse.type}
-          onEditInfo={handleEditInfo}
-          onSegmentColorClick={onSegmentColorClick}
-          onToggleVisibility={onToggleSegmentVisibility}
-          onToggleLock={onToggleSegmentLock}
-          onSelect={onSegmentClick}
-          onRename={onSegmentEdit}
-          onDelete={onSegmentDelete}
-        />
-        <SegmentGroup
-          title="New Lesions"
-          segments={groupedSegments['New Lesion'] || []}
-          segmentationId={segmentationIdToUse}
-          disableEditing={disableEditing}
-          representationType={representationToUse.type}
-          onEditInfo={handleEditInfo}
-          onSegmentColorClick={onSegmentColorClick}
-          onToggleVisibility={onToggleSegmentVisibility}
-          onToggleLock={onToggleSegmentLock}
-          onSelect={onSegmentClick}
-          onRename={onSegmentEdit}
-          onDelete={onSegmentDelete}
-        />
+        {/* If there are new lesions, show them first, otherwise display at the bottom */}
+        {groupedSegments['New Lesion'] && groupedSegments['New Lesion'].length > 0 && (
+          <>
+            <SegmentGroup
+              title="New Lesions"
+              segments={groupedSegments['New Lesion'] || []}
+              segmentationId={segmentationIdToUse}
+              disableEditing={disableEditing}
+              representationType={representationToUse.type}
+              onEditInfo={handleEditInfo}
+              onSegmentColorClick={onSegmentColorClick}
+              onToggleVisibility={onToggleSegmentVisibility}
+              onToggleLock={onToggleSegmentLock}
+              onSelect={onSegmentClick}
+              onRename={onSegmentEdit}
+              onDelete={onSegmentDelete}
+            />
+          </>
+        )}
+        <>
+          <SegmentGroup
+            title="Target Lesions"
+            segments={groupedSegments['Target'] || []}
+            segmentationId={segmentationIdToUse}
+            disableEditing={disableEditing}
+            representationType={representationToUse.type}
+            onEditInfo={handleEditInfo}
+            onSegmentColorClick={onSegmentColorClick}
+            onToggleVisibility={onToggleSegmentVisibility}
+            onToggleLock={onToggleSegmentLock}
+            onSelect={onSegmentClick}
+            onRename={onSegmentEdit}
+            onDelete={onSegmentDelete}
+          />
+          <SegmentGroup
+            title="Non-Target Lesions"
+            segments={groupedSegments['Non-Target'] || []}
+            segmentationId={segmentationIdToUse}
+            disableEditing={disableEditing}
+            representationType={representationToUse.type}
+            onEditInfo={handleEditInfo}
+            onSegmentColorClick={onSegmentColorClick}
+            onToggleVisibility={onToggleSegmentVisibility}
+            onToggleLock={onToggleSegmentLock}
+            onSelect={onSegmentClick}
+            onRename={onSegmentEdit}
+            onDelete={onSegmentDelete}
+          />
+          {(!groupedSegments['New Lesion'] || groupedSegments['New Lesion'].length <= 0) && (
+            <SegmentGroup
+              title="New Lesions"
+              segments={groupedSegments['New Lesion'] || []}
+              segmentationId={segmentationIdToUse}
+              disableEditing={disableEditing}
+              representationType={representationToUse.type}
+              onEditInfo={handleEditInfo}
+              onSegmentColorClick={onSegmentColorClick}
+              onToggleVisibility={onToggleSegmentVisibility}
+              onToggleLock={onToggleSegmentLock}
+              onSelect={onSegmentClick}
+              onRename={onSegmentEdit}
+              onDelete={onSegmentDelete}
+            />
+          )}
+        </>
       </ScrollArea>
 
       {selectedSegmentIndex !== null && (

@@ -1,10 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, ReactNode } from 'react';
 import { ScrollArea } from '@ohif/ui-next';
 import { useSegmentationTableContext } from '@ohif/ui-next';
 import { EditLesionDialog } from './EditLesionDialog';
 import { SegmentGroup } from './SegmentGroup';
 import { useSegmentGroups } from '../hooks/useSegmentGroups';
 import { cn } from '@ohif/ui-next/lib/utils';
+import { PlusCircleIcon, CircleIcon, CrosshairIcon } from 'lucide-react';
 
 type CustomSegmentationSegmentsProps = {
   segmentation?: any;
@@ -15,6 +16,9 @@ export function CustomSegmentationSegments({
   segmentation: initialSegmentation,
   representation: initialRepresentation,
 }: CustomSegmentationSegmentsProps) {
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [selectedSegmentIndex, setSelectedSegmentIndex] = useState<number | null>(null);
+
   const {
     activeSegmentationId,
     disableEditing,
@@ -27,6 +31,11 @@ export function CustomSegmentationSegments({
     onSegmentDelete,
     data,
   } = useSegmentationTableContext('SegmentationTable.Segments');
+
+  const groupedSegments = useSegmentGroups(
+    initialRepresentation?.segments || {},
+    initialSegmentation?.segments || {}
+  );
 
   let segmentationToUse = initialSegmentation;
   let representationToUse = initialRepresentation;
@@ -43,26 +52,33 @@ export function CustomSegmentationSegments({
     return null;
   }
 
-  const [editDialogOpen, setEditDialogOpen] = useState(false);
-  const [selectedSegmentIndex, setSelectedSegmentIndex] = useState<number | null>(null);
-
   const handleEditInfo = (segmentationId: string, segmentIndex: number) => {
     setSelectedSegmentIndex(segmentIndex);
     setEditDialogOpen(true);
   };
 
-  const segmentCount = Object.keys(representationToUse.segments || {}).length;
-  // const height = mode === 'collapsed' ? 'h-[600px]' : `h-[${segmentCount * 200}px]`;
   const height = mode === 'collapsed' ? 'h-[600px]' : `h-[560px]`;
 
-  const groupedSegments = useSegmentGroups(
-    representationToUse.segments || {},
-    segmentationToUse.segments || {}
+  const NewLesionsTitle: ReactNode = (
+    <div className="flex items-center gap-2">
+      <PlusCircleIcon className="h-4 w-4" />
+      <span>New Lesions</span>
+    </div>
   );
 
-  function handleSaveChanges(event: React.MouseEvent<HTMLButtonElement>) {
-    console.log('save changes');
-  }
+  const TargetLesionsTitle: ReactNode = (
+    <div className="flex items-center gap-2">
+      <CrosshairIcon className="h-4 w-4" />
+      <span>Target Lesions</span>
+    </div>
+  );
+
+  const NonTargetLesionsTitle: ReactNode = (
+    <div className="flex items-center gap-2">
+      <CircleIcon className="h-4 w-4" />
+      <span>Non-Target Lesions</span>
+    </div>
+  );
 
   return (
     <>
@@ -74,7 +90,7 @@ export function CustomSegmentationSegments({
         {groupedSegments['New Lesion'] && groupedSegments['New Lesion'].length > 0 && (
           <>
             <SegmentGroup
-              title="New Lesions"
+              title={NewLesionsTitle}
               segments={groupedSegments['New Lesion'] || []}
               segmentationId={segmentationIdToUse}
               disableEditing={disableEditing}
@@ -91,7 +107,7 @@ export function CustomSegmentationSegments({
         )}
         <>
           <SegmentGroup
-            title="Target Lesions"
+            title={TargetLesionsTitle}
             segments={groupedSegments['Target'] || []}
             segmentationId={segmentationIdToUse}
             disableEditing={disableEditing}
@@ -105,7 +121,7 @@ export function CustomSegmentationSegments({
             onDelete={onSegmentDelete}
           />
           <SegmentGroup
-            title="Non-Target Lesions"
+            title={NonTargetLesionsTitle}
             segments={groupedSegments['Non-Target'] || []}
             segmentationId={segmentationIdToUse}
             disableEditing={disableEditing}
@@ -120,7 +136,7 @@ export function CustomSegmentationSegments({
           />
           {(!groupedSegments['New Lesion'] || groupedSegments['New Lesion'].length <= 0) && (
             <SegmentGroup
-              title="New Lesions"
+              title={NewLesionsTitle}
               segments={groupedSegments['New Lesion'] || []}
               segmentationId={segmentationIdToUse}
               disableEditing={disableEditing}

@@ -1,12 +1,22 @@
-import React from 'react';
+import React, { ReactNode } from 'react';
 import { SegmentRow } from './SegmentRow';
 import { cn } from '@ohif/ui-next/lib/utils';
 
 type SegmentGroupProps = {
-  title: string;
+  title: ReactNode;
   segments: Array<{
-    segment: any;
-    segmentFromSegmentation: any;
+    segment: {
+      segmentIndex: number;
+      color: [number, number, number];
+      visible: boolean;
+    };
+    segmentFromSegmentation: {
+      locked: boolean;
+      active: boolean;
+      label: string;
+      displayText: string;
+      cachedStats: any;
+    };
   }>;
   className?: string;
   segmentationId: string;
@@ -38,7 +48,7 @@ export function SegmentGroup({
 }: SegmentGroupProps) {
   return (
     <div className={cn('mb-2', className)}>
-      <h3 className="text-primary-light p-2 text-lg font-semibold">{title}:</h3>
+      <h3 className="text-primary-light p-2 text-lg font-semibold">{title}</h3>
       {segments &&
         segments.length >= 0 &&
         segments.map(({ segment, segmentFromSegmentation }) => {

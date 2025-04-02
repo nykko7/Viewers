@@ -58,6 +58,11 @@ type SegmentationsState = {
    * Gets the baseline study
    */
   getBaselineStudy: () => Study | null;
+
+  /**
+   * Updates a segment's data
+   */
+  updateSegment: (updatedSegment: Segment) => void;
 };
 
 /**
@@ -164,6 +169,61 @@ const createSegmentationsStore = (set, get) => ({
 
   getStudies: () => {
     return get().studiesInfo.studyMap;
+  },
+
+  updateSegment: (updatedSegment: Segment) => {
+    set(
+      state => {
+        const studyMap = { ...state.studiesInfo.studyMap };
+        const segmentInfoBySeriesAndLabel = { ...state.studiesInfo.segmentInfoBySeriesAndLabel };
+
+        // Find and update the segment in the study map
+        for (const study of Object.values(studyMap)) {
+          const typedStudy = study as Study;
+          if (!typedStudy.series) {
+            continue;
+          }
+
+          for (const series of typedStudy.series) {
+            if (!series.segmentations) {
+              continue;
+            }
+
+            for (const segmentation of series.segmentations) {
+              if (!segmentation.segments) {
+                continue;
+              }
+
+              const segments = segmentation.segments as Segment[];
+              const segmentIndex = segments.findIndex(s => s.id === updatedSegment.id);
+
+              if (segmentIndex !== -1) {
+                // Update the segment in the segmentation
+                segments[segmentIndex] = updatedSegment;
+                segmentation.segments = segments;
+
+                // Update the segment in the segmentInfoBySeriesAndLabel
+                if (segmentInfoBySeriesAndLabel[series.series_instance_uid]) {
+                  const segmentMap = segmentInfoBySeriesAndLabel[series.series_instance_uid];
+                  segmentMap[updatedSegment.label] = updatedSegment;
+                }
+                break;
+              }
+            }
+          }
+        }
+
+        return {
+          studiesInfo: {
+            ...state.studiesInfo,
+            studyMap,
+            segmentInfoBySeriesAndLabel,
+          },
+        };
+      },
+      false,
+      'updateSegment'
+    );
   },
 });
 

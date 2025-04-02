@@ -138,19 +138,21 @@ type FormValues = {
 export function EditLesionDialog({ open, onOpenChange, segmentIndex }: EditLesionDialogProps) {
   const { data, activeSegmentationId } = useSegmentationTableContext('SegmentationTable.Segments');
   const studies = useSegmentationsStore(state => state.getStudies());
+  const updateSegment = useSegmentationsStore(state => state.updateSegment);
   const [selectedSegmentId, setSelectedSegmentId] = useState<string | null>(null);
+  const [selectedOriginId, setSelectedOriginId] = useState<string | null>(null);
 
   // Get active segmentation
   const activeSegmentation = data.find(
     item => item.segmentation.segmentationId === activeSegmentationId
   );
 
-  const defaultValues = React.useMemo(
+  const defaultValues: FormValues = React.useMemo(
     () => ({
       label: `Segment ${segmentIndex + 1}`,
       affected_organs: '',
-      lession_type: 'Mass' as const,
-      lession_classification: 'New Lesion' as const,
+      lession_type: 'Mass',
+      lession_classification: 'New lession',
     }),
     [segmentIndex]
   );
@@ -170,6 +172,7 @@ export function EditLesionDialog({ open, onOpenChange, segmentIndex }: EditLesio
   useEffect(() => {
     if (!open) {
       setSelectedSegmentId(null);
+      setSelectedOriginId(null);
       reset();
       return;
     }
@@ -308,21 +311,31 @@ export function EditLesionDialog({ open, onOpenChange, segmentIndex }: EditLesio
   useEffect(() => {
     return () => {
       setSelectedSegmentId(null);
+      setSelectedOriginId(null);
       reset();
     };
   }, [reset]);
 
-  const onSubmit = (data: FormValues) => {
-    console.log('Form submitted:', {
-      ...data,
-      lession_type: data.lession_type as 'Mass' | 'Other' | 'Lymph',
-      lession_classification: data.lession_classification as
-        | 'Target'
-        | 'Non-Target'
-        | 'New lession',
-    });
-    // TODO: Implement save functionality
-    onOpenChange(false);
+  const onSubmit = async (data: FormValues) => {
+    if (!currentSegment) {
+      return;
+    }
+
+    const updatedSegment = {
+      ...currentSegment,
+      label: data.label,
+      affected_organs: data.affected_organs,
+      lession_type: data.lession_type,
+      lession_classification: data.lession_classification,
+      lesion_segments: selectedOriginId ? [selectedOriginId] : [],
+    };
+
+    try {
+      await updateSegment(updatedSegment);
+      onOpenChange(false);
+    } catch (error) {
+      console.error('Failed to update segment:', error);
+    }
   };
 
   const connectionMap = buildConnectionMap(Object.values(studies));
@@ -480,6 +493,149 @@ export function EditLesionDialog({ open, onOpenChange, segmentIndex }: EditLesio
                     </SelectContent>
                   </Select>
                 </div>
+
+                {/* Only show origin selection for non-basal studies */}
+                {segmentStudy && !segmentStudy.is_basal && (
+                  <div className="space-y-2">
+                    <Label>Origin Lesion:</Label>
+                    <div className="relative w-full">
+                      <Popover>
+                        <PopoverTrigger asChild>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            role="combobox"
+                            className={cn(
+                              'w-full justify-between text-white hover:text-white',
+                              !selectedSegmentId && 'text-muted-foreground'
+                            )}
+                          >
+                            {selectedOriginId ? (
+                              <>
+                                {Object.values(studies)
+                                  .map(study => {
+                                    if (!study.series) {
+                                      return null;
+                                    }
+                                    for (const series of study.series) {
+                                      if (!series.segmentations) {
+                                        continue;
+                                      }
+                                      for (const seg of series.segmentations) {
+                                        if (!seg.segments) {
+                                          continue;
+                                        }
+                                        const segment = seg.segments.find(
+                                          s => s.id === selectedOriginId
+                                        );
+                                        if (segment) {
+                                          return `${segment.label} (${new Date(study.study_date).toLocaleDateString()})`;
+                                        }
+                                      }
+                                    }
+                                    return null;
+                                  })
+                                  .find(Boolean) || 'Select origin...'}
+                              </>
+                            ) : (
+                              'Select origin...'
+                            )}
+                            <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent
+                          align="start"
+                          className="w-[var(--radix-popover-trigger-width)] p-0"
+                        >
+                          <Command className="w-full">
+                            <CommandInput placeholder="Search lesion..." className="h-9" />
+                            <CommandList
+                              className="max-h-[300px] overflow-y-auto"
+                              onWheel={e => e.stopPropagation()}
+                            >
+                              <CommandEmpty>No lesion found.</CommandEmpty>
+                              <CommandGroup>
+                                {Object.values(studies)
+                                  .filter(
+                                    study =>
+                                      // Only show studies that are before the current study
+                                      segmentStudy &&
+                                      new Date(study.study_date) < new Date(segmentStudy.study_date)
+                                  )
+                                  .sort(
+                                    (a, b) =>
+                                      new Date(b.study_date).getTime() -
+                                      new Date(a.study_date).getTime()
+                                  )
+                                  .map(study => {
+                                    if (!study.series) {
+                                      return null;
+                                    }
+                                    const studySegments: Array<{ segment: Segment; study: Study }> =
+                                      [];
+
+                                    for (const series of study.series) {
+                                      if (!series.segmentations) {
+                                        continue;
+                                      }
+                                      for (const seg of series.segmentations) {
+                                        if (!seg.segments) {
+                                          continue;
+                                        }
+                                        for (const segment of seg.segments) {
+                                          // Don't show current segment
+                                          if (segment.id === currentSegment?.id) {
+                                            continue;
+                                          }
+                                          studySegments.push({ segment, study });
+                                        }
+                                      }
+                                    }
+
+                                    if (studySegments.length === 0) {
+                                      return null;
+                                    }
+
+                                    return (
+                                      <React.Fragment key={study.study_id}>
+                                        <CommandItem
+                                          value={`study-${study.study_date}`}
+                                          className="text-muted-foreground font-bold"
+                                          disabled
+                                        >
+                                          {new Date(study.study_date).toLocaleDateString()}
+                                        </CommandItem>
+                                        {studySegments.map(({ segment }) => (
+                                          <CommandItem
+                                            value={segment.label}
+                                            key={segment.id}
+                                            onSelect={() => {
+                                              setSelectedOriginId(segment.id);
+                                            }}
+                                            className="ml-2 cursor-pointer"
+                                          >
+                                            {segment.label}
+                                            <Check
+                                              className={cn(
+                                                'ml-auto h-4 w-4',
+                                                selectedOriginId === segment.id
+                                                  ? 'opacity-100'
+                                                  : 'opacity-0'
+                                              )}
+                                            />
+                                          </CommandItem>
+                                        ))}
+                                      </React.Fragment>
+                                    );
+                                  })}
+                              </CommandGroup>
+                            </CommandList>
+                          </Command>
+                        </PopoverContent>
+                      </Popover>
+                    </div>
+                  </div>
+                )}
 
                 {hasHistory ? (
                   <div className="space-y-2">

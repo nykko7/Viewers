@@ -709,8 +709,8 @@ export function EditLesionDialog({ open, onOpenChange, segmentIndex }: EditLesio
                                   .find(Boolean) || 'Select origin...'}
                               </>
                             ) : (
-                              // Default to "Select origin" unless we're sure there's no origin
-                              'Select origin...'
+                              // When no origin is selected, explicitly label as standalone
+                              'No origin (standalone lesion)'
                             )}
                             <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                           </Button>
@@ -790,14 +790,12 @@ export function EditLesionDialog({ open, onOpenChange, segmentIndex }: EditLesio
                         </PopoverContent>
                       </Popover>
                     </div>
-                    {selectedOriginId === null &&
-                      temporaryConnection.source === null &&
-                      temporaryConnection.target === currentSegment?.id && (
-                        <p className="text-muted-foreground mt-1 text-xs">
-                          This lesion will be treated as standalone with no connection to previous
-                          studies.
-                        </p>
-                      )}
+                    {selectedOriginId === null && (
+                      <p className="text-muted-foreground mt-1 text-xs">
+                        This lesion will be treated as standalone with no connection to previous
+                        studies.
+                      </p>
+                    )}
                   </div>
                 )}
 

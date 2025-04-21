@@ -5,7 +5,7 @@ import { EditLesionDialog } from './EditLesionDialog';
 import { SegmentGroup } from './SegmentGroup';
 import { useSegmentGroups } from '../hooks/useSegmentGroups';
 import { cn } from '@ohif/ui-next/lib/utils';
-import { PlusCircleIcon, CircleIcon, CrosshairIcon } from 'lucide-react';
+import { CircleDashedIcon, CircleIcon, CrosshairIcon } from 'lucide-react';
 
 type CustomSegmentationSegmentsProps = {
   segmentation?: any;
@@ -61,7 +61,7 @@ export function CustomSegmentationSegments({
 
   const NewLesionsTitle: ReactNode = (
     <div className="flex items-center gap-2">
-      <PlusCircleIcon className="h-4 w-4" />
+      <CircleDashedIcon className="h-4 w-4" />
       <span>New Lesions</span>
     </div>
   );

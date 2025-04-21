@@ -43,6 +43,7 @@ import {
 
 import { Check, ChevronsUpDown } from 'lucide-react';
 import { CommandEmpty, CommandInput, CommandList, CommandGroup, CommandItem } from '@ohif/ui-next';
+import { ViewportSegmentationInfo } from '@ohif/ui-next/src/components/SegmentationTable';
 
 type EditLesionDialogProps = {
   open: boolean;
@@ -50,14 +51,35 @@ type EditLesionDialogProps = {
   segmentIndex: number;
 };
 
-type Segmentation = {
-  segmentationId: string;
-  segments: Array<{
-    label: string;
-    cachedStats: {
-      id: string;
-    };
-  }>;
+// Add this function to find the direct previous study
+const getDirectPreviousStudy = (currentStudy: Study | null, allStudies: Study[]) => {
+  if (!currentStudy) {
+    return null;
+  }
+
+  // Sort studies by date
+  const sortedStudies = [...allStudies].sort(
+    (a, b) => new Date(a.study_date).getTime() - new Date(b.study_date).getTime()
+  );
+
+  // Find current study index
+  const currentIndex = sortedStudies.findIndex(s => s.study_id === currentStudy.study_id);
+
+  // Return previous study if exists
+  return currentIndex > 0 ? sortedStudies[currentIndex - 1] : null;
+};
+
+// Update the interface to match the expected typing in the segmentation object
+type SegmentationWithSegments = {
+  segmentation: {
+    segmentationId: string;
+    segments: Array<{
+      label: string;
+      cachedStats: {
+        id: string;
+      };
+    }>;
+  };
 };
 
 // Add a helper component for the study group
@@ -141,11 +163,17 @@ export function EditLesionDialog({ open, onOpenChange, segmentIndex }: EditLesio
   const updateSegment = useSegmentationsStore(state => state.updateSegment);
   const [selectedSegmentId, setSelectedSegmentId] = useState<string | null>(null);
   const [selectedOriginId, setSelectedOriginId] = useState<string | null>(null);
+  const [temporaryConnection, setTemporaryConnection] = useState<{
+    source: string | null;
+    target: string | null;
+  }>({ source: null, target: null });
 
   // Get active segmentation
   const activeSegmentation = data.find(
-    item => item.segmentation.segmentationId === activeSegmentationId
-  );
+    item =>
+      (item as unknown as SegmentationWithSegments).segmentation.segmentationId ===
+      activeSegmentationId
+  ) as unknown as SegmentationWithSegments | undefined;
 
   const defaultValues: FormValues = React.useMemo(
     () => ({
@@ -267,36 +295,39 @@ export function EditLesionDialog({ open, onOpenChange, segmentIndex }: EditLesio
 
     // If no selected segment or not found, try to find by label
     if (!foundSegment && activeSegmentation) {
-      const initialLabel = activeSegmentation.segmentation.segments[segmentIndex]?.label;
+      const initialSegment = activeSegmentation.segmentation.segments[segmentIndex];
+      if (initialSegment) {
+        const initialLabel = initialSegment.label;
 
-      for (const study of Object.values(studies)) {
-        if (!study.series) {
-          continue;
-        }
-
-        for (const series of study.series) {
-          if (!series.segmentations) {
+        for (const study of Object.values(studies)) {
+          if (!study.series) {
             continue;
           }
 
-          for (const seg of series.segmentations) {
-            if (!seg.segments) {
+          for (const series of study.series) {
+            if (!series.segmentations) {
               continue;
             }
 
-            const segment = seg.segments.find(s => s.label === initialLabel);
-            if (segment) {
-              foundSegment = segment;
-              foundStudy = study;
+            for (const seg of series.segmentations) {
+              if (!seg.segments) {
+                continue;
+              }
+
+              const segment = seg.segments.find(s => s.label === initialLabel);
+              if (segment) {
+                foundSegment = segment;
+                foundStudy = study;
+                break;
+              }
+            }
+            if (foundSegment) {
               break;
             }
           }
           if (foundSegment) {
             break;
           }
-        }
-        if (foundSegment) {
-          break;
         }
       }
     }
@@ -307,6 +338,12 @@ export function EditLesionDialog({ open, onOpenChange, segmentIndex }: EditLesio
     };
   }, [selectedSegmentId, studies, activeSegmentation, segmentIndex]);
 
+  // Get the direct previous study
+  const directPreviousStudy = React.useMemo(
+    () => getDirectPreviousStudy(segmentStudy, Object.values(studies)),
+    [segmentStudy, studies]
+  );
+
   // Cleanup effect when component unmounts
   useEffect(() => {
     return () => {
@@ -315,6 +352,93 @@ export function EditLesionDialog({ open, onOpenChange, segmentIndex }: EditLesio
       reset();
     };
   }, [reset]);
+
+  // Handler for setting the origin ID
+  const handleOriginSelect = (originId: string) => {
+    setSelectedOriginId(originId);
+
+    // Create a temporary connection for display purposes
+    if (currentSegment) {
+      setTemporaryConnection({
+        source: originId,
+        target: currentSegment.id,
+      });
+    }
+  };
+
+  // Handler for segment selection from the graph
+  const handleSegmentSelect = (segmentId: string) => {
+    // If this segment already selected, do nothing
+    if (segmentId === selectedSegmentId) {
+      return;
+    }
+
+    setSelectedSegmentId(segmentId);
+
+    // Find segment data to populate form
+    for (const study of Object.values(studies)) {
+      if (!study.series) {
+        continue;
+      }
+
+      for (const series of study.series) {
+        if (!series.segmentations) {
+          continue;
+        }
+
+        for (const seg of series.segmentations) {
+          if (!seg.segments) {
+            continue;
+          }
+
+          const segment = seg.segments.find(s => s.id === segmentId);
+          if (segment) {
+            // Update form values
+            setValue('label', segment.label || `Segment ${segmentIndex + 1}`);
+            setValue('affected_organs', segment.affected_organs || '');
+            setValue(
+              'lession_type',
+              (segment.lession_type || 'Mass') as 'Mass' | 'Other' | 'Lymph'
+            );
+            setValue(
+              'lession_classification',
+              (segment.lession_classification || 'New lession') as
+                | 'Target'
+                | 'Non-Target'
+                | 'New lession'
+            );
+
+            // Update origin
+            if (segment.lesion_segments && segment.lesion_segments.length > 0) {
+              setSelectedOriginId(segment.lesion_segments[0]);
+
+              // Also set temporary connection for display
+              setTemporaryConnection({
+                source: segment.lesion_segments[0],
+                target: segment.id,
+              });
+            } else {
+              setSelectedOriginId(null);
+              setTemporaryConnection({ source: null, target: null });
+            }
+
+            break;
+          }
+        }
+      }
+    }
+  };
+
+  // Update the form when selected segment changes
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+
+    if (selectedSegmentId && currentSegment?.id !== selectedSegmentId) {
+      handleSegmentSelect(selectedSegmentId);
+    }
+  }, [selectedSegmentId, open, currentSegment]);
 
   const onSubmit = async (data: FormValues) => {
     if (!currentSegment) {
@@ -327,11 +451,14 @@ export function EditLesionDialog({ open, onOpenChange, segmentIndex }: EditLesio
       affected_organs: data.affected_organs,
       lession_type: data.lession_type,
       lession_classification: data.lession_classification,
+      // Only set lesion_segments if an origin is selected
       lesion_segments: selectedOriginId ? [selectedOriginId] : [],
     };
 
     try {
       await updateSegment(updatedSegment);
+      // Reset temporary connection
+      setTemporaryConnection({ source: null, target: null });
       onOpenChange(false);
     } catch (error) {
       console.error('Failed to update segment:', error);
@@ -507,7 +634,7 @@ export function EditLesionDialog({ open, onOpenChange, segmentIndex }: EditLesio
                             role="combobox"
                             className={cn(
                               'w-full justify-between text-white hover:text-white',
-                              !selectedSegmentId && 'text-muted-foreground'
+                              !selectedOriginId && 'text-muted-foreground'
                             )}
                           >
                             {selectedOriginId ? (
@@ -555,79 +682,46 @@ export function EditLesionDialog({ open, onOpenChange, segmentIndex }: EditLesio
                             >
                               <CommandEmpty>No lesion found.</CommandEmpty>
                               <CommandGroup>
-                                {Object.values(studies)
-                                  .filter(
-                                    study =>
-                                      // Only show studies that are before the current study
-                                      segmentStudy &&
-                                      new Date(study.study_date) < new Date(segmentStudy.study_date)
-                                  )
-                                  .sort(
-                                    (a, b) =>
-                                      new Date(b.study_date).getTime() -
-                                      new Date(a.study_date).getTime()
-                                  )
-                                  .map(study => {
-                                    if (!study.series) {
-                                      return null;
-                                    }
-                                    const studySegments: Array<{ segment: Segment; study: Study }> =
-                                      [];
-
-                                    for (const series of study.series) {
-                                      if (!series.segmentations) {
-                                        continue;
-                                      }
-                                      for (const seg of series.segmentations) {
-                                        if (!seg.segments) {
-                                          continue;
-                                        }
-                                        for (const segment of seg.segments) {
-                                          // Don't show current segment
-                                          if (segment.id === currentSegment?.id) {
-                                            continue;
-                                          }
-                                          studySegments.push({ segment, study });
-                                        }
-                                      }
-                                    }
-
-                                    if (studySegments.length === 0) {
-                                      return null;
-                                    }
-
-                                    return (
-                                      <React.Fragment key={study.study_id}>
-                                        <CommandItem
-                                          value={`study-${study.study_date}`}
-                                          className="text-muted-foreground font-bold"
-                                          disabled
-                                        >
-                                          {new Date(study.study_date).toLocaleDateString()}
-                                        </CommandItem>
-                                        {studySegments.map(({ segment }) => (
-                                          <CommandItem
-                                            value={segment.label}
-                                            key={segment.id}
-                                            onSelect={() => {
-                                              setSelectedOriginId(segment.id);
-                                            }}
-                                            className="ml-2 cursor-pointer"
-                                          >
-                                            {segment.label}
-                                            <Check
-                                              className={cn(
-                                                'ml-auto h-4 w-4',
-                                                selectedOriginId === segment.id
-                                                  ? 'opacity-100'
-                                                  : 'opacity-0'
-                                              )}
-                                            />
-                                          </CommandItem>
-                                        ))}
-                                      </React.Fragment>
-                                    );
-                                  })}
+                                {directPreviousStudy && (
+                                  <React.Fragment key={directPreviousStudy.study_id}>
+                                    <CommandItem
+                                      value={`study-${directPreviousStudy.study_date}`}
+                                      className="text-muted-foreground font-bold"
+                                      disabled
+                                    >
+                                      {new Date(
+                                        directPreviousStudy.study_date
+                                      ).toLocaleDateString()}
+                                    </CommandItem>
+                                    {directPreviousStudy.series?.flatMap(
+                                      series =>
+                                        series.segmentations?.flatMap(seg =>
+                                          seg.segments
+                                            ?.filter(segment => segment.id !== currentSegment?.id)
+                                            .map(segment => (
+                                              <CommandItem
+                                                value={segment.label}
+                                                key={segment.id}
+                                                onSelect={() => {
+                                                  handleOriginSelect(segment.id);
+                                                }}
+                                                className="ml-2 cursor-pointer"
+                                              >
+                                                {segment.label}
+                                                <Check
+                                                  className={cn(
+                                                    'ml-auto h-4 w-4',
+                                                    selectedOriginId === segment.id
+                                                      ? 'opacity-100'
+                                                      : 'opacity-0'
+                                                  )}
+                                                />
+                                              </CommandItem>
+                                            ))
+                                        ) || []
+                                    ) || []}
+                                  </React.Fragment>
+                                )}
                               </CommandGroup>
                             </CommandList>
                           </Command>
@@ -693,8 +787,9 @@ export function EditLesionDialog({ open, onOpenChange, segmentIndex }: EditLesio
                       studies={Object.values(studies)}
                       currentStudyId={segmentStudy?.study_id || ''}
                       selectedSegmentId={currentSegment?.id}
-                      onSegmentSelect={setSelectedSegmentId}
+                      onSegmentSelect={handleSegmentSelect}
                       baselineStudyId={Object.values(studies)[0]?.study_id}
+                      temporaryConnection={temporaryConnection}
                     />
                   </div>
                 ) : (

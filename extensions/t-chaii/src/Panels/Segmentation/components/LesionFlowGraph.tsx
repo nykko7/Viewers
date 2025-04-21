@@ -8,7 +8,6 @@ import {
   Handle,
   Position,
   NodeProps,
-  NodeTypes,
   NodeToolbar,
   MarkerType,
 } from '@xyflow/react';
@@ -36,7 +35,10 @@ type LesionNodeData = {
   isBaseline?: boolean;
 };
 
-type LesionNode = Node<LesionNodeData>;
+type DateLabelData = {
+  date: string;
+  isBaseline?: boolean;
+};
 
 // Add utility function to format segment label
 const formatSegmentLabel = (label: string): string => {
@@ -139,25 +141,29 @@ const CustomNode = ({ data, id }: NodeProps) => {
   );
 };
 
-// Update StudyDateLabel component
-const StudyDateLabel = ({ data }: NodeProps<{ date: string; isBaseline?: boolean }>) => (
-  <div
-    className={cn(
-      'rounded px-3 py-1 text-center text-sm font-bold',
-      data.isBaseline ? 'bg-[rgb(90,204,230)] text-black' : 'bg-gray-800 text-gray-300'
-    )}
-  >
-    {new Date(data.date).toLocaleDateString()}
-  </div>
-);
+// Update StudyDateLabel component with proper typing
+const StudyDateLabel = ({ data }: NodeProps) => {
+  const labelData = data as DateLabelData;
+  return (
+    <div
+      className={cn(
+        'rounded px-3 py-1 text-center text-sm font-bold',
+        labelData.isBaseline ? 'bg-[rgb(90,204,230)] text-black' : 'bg-gray-800 text-gray-300'
+      )}
+    >
+      {new Date(labelData.date).toLocaleDateString()}
+    </div>
+  );
+};
 
-type LesionFlowGraphProps = {
+interface LesionFlowGraphProps {
   studies: Study[];
   currentStudyId: string;
   selectedSegmentId?: string;
   onSegmentSelect?: (segmentId: string) => void;
   baselineStudyId?: string;
-};
+  temporaryConnection?: { source: string | null; target: string | null };
+}
 
 export function LesionFlowGraph({
   studies,
@@ -165,24 +171,10 @@ export function LesionFlowGraph({
   selectedSegmentId,
   onSegmentSelect,
   baselineStudyId,
+  temporaryConnection = { source: null, target: null },
 }: LesionFlowGraphProps) {
-  const debugSegmentConnections = (studies: Study[]) => {
-    console.log('=== Debug Segment Connections ===');
-    studies.forEach(study => {
-      console.log(`Study Date: ${study.study_date}`);
-      study.series.forEach(series => {
-        series.segmentations.forEach(segmentation => {
-          segmentation.segments.forEach(segment => {
-            console.log(`Segment ${segment.label}:`, {
-              id: segment.id,
-              nodeId: `${study.study_id}-${segment.id}`,
-              lesion_segments: segment.lesion_segments,
-            });
-          });
-        });
-      });
-    });
-  };
+  // Use React.useMemo for connection map to ensure it updates when studies change
+  const connectionMap = React.useMemo(() => buildConnectionMap(studies), [studies]);
 
   const getRelatedSegments = (segmentId: string, connectionMap: Map<string, Set<string>>) => {
     const related = new Set<string>();
@@ -222,8 +214,20 @@ export function LesionFlowGraph({
     return related;
   };
 
+  // Get highlighted segments and related segments outside of the getNodesAndEdges function
+  const { selectedSegments, relatedSegments } = React.useMemo(() => {
+    if (!selectedSegmentId) {
+      return { selectedSegments: new Set<string>(), relatedSegments: new Set<string>() };
+    }
+
+    const selected = new Set([selectedSegmentId]);
+    const related = getRelatedSegments(selectedSegmentId, connectionMap);
+
+    return { selectedSegments: selected, relatedSegments: related };
+  }, [selectedSegmentId, connectionMap]);
+
   const getNodesAndEdges = useCallback(() => {
-    const nodes: Node<LesionNodeData>[] = [];
+    const nodes: Node[] = [];
     const edges: Edge[] = [];
     const nodeMap = new Map<
       string,
@@ -239,9 +243,6 @@ export function LesionFlowGraph({
       (a, b) => new Date(a.study_date).getTime() - new Date(b.study_date).getTime()
     );
 
-    // Build connection map (parent->child relationships)
-    const connectionMap = buildConnectionMap(sortedStudies);
-
     // Calculate layout dimensions
     const VERTICAL_SPACING = 120;
     const HORIZONTAL_SPACING = 100;
@@ -252,25 +253,13 @@ export function LesionFlowGraph({
     const studySegmentCounts = new Map<string, number>();
     sortedStudies.forEach(study => {
       let count = 0;
-      study.series.forEach(series => {
-        series.segmentations.forEach(segmentation => {
-          count += segmentation.segments.length;
+      study.series?.forEach(series => {
+        series.segmentations?.forEach(segmentation => {
+          count += segmentation.segments?.length || 0;
         });
       });
       studySegmentCounts.set(study.study_id, count);
     });
-
-    // Get highlighted segments and related segments
-    const { selectedSegments, relatedSegments } = React.useMemo(() => {
-      if (!selectedSegmentId) {
-        return { selectedSegments: new Set<string>(), relatedSegments: new Set<string>() };
-      }
-
-      const selected = new Set([selectedSegmentId]);
-      const related = getRelatedSegments(selectedSegmentId, connectionMap);
-
-      return { selectedSegments: selected, relatedSegments: related };
-    }, [selectedSegmentId, connectionMap]);
 
     // Second pass: create nodes
     sortedStudies.forEach((study, studyIndex) => {
@@ -291,12 +280,12 @@ export function LesionFlowGraph({
         data: {
           date: study.study_date,
           isBaseline: study.study_id === baselineStudyId,
-        },
+        } as DateLabelData,
       });
 
-      study.series.forEach(series => {
-        series.segmentations.forEach(segmentation => {
-          segmentation.segments.forEach(segment => {
+      study.series?.forEach(series => {
+        series.segmentations?.forEach(segmentation => {
+          segmentation.segments?.forEach(segment => {
             const xOffset = startX + segmentCount * HORIZONTAL_SPACING;
             segmentCount++;
             const position = { x: xOffset, y: yOffset };
@@ -328,7 +317,7 @@ export function LesionFlowGraph({
                 isSelected: selectedSegments.has(segment.id),
                 isRelated: relatedSegments.has(segment.id),
                 isBaseline: study.study_id === baselineStudyId,
-              },
+              } as LesionNodeData,
             });
           });
         });
@@ -375,8 +364,55 @@ export function LesionFlowGraph({
       });
     });
 
+    // Add temporary connection if exists
+    if (temporaryConnection.source && temporaryConnection.target) {
+      const sourceInfo = nodeMap.get(temporaryConnection.source);
+      const targetInfo = nodeMap.get(temporaryConnection.target);
+
+      if (sourceInfo && targetInfo) {
+        const sourceNodeId = `${sourceInfo.studyId}-${temporaryConnection.source}`;
+        const targetNodeId = `${targetInfo.studyId}-${temporaryConnection.target}`;
+
+        // Check if this edge already exists to avoid duplicates
+        const existingEdge = edges.find(
+          edge => edge.source === sourceNodeId && edge.target === targetNodeId
+        );
+
+        if (!existingEdge) {
+          edges.push({
+            id: `temp-${temporaryConnection.source}-${temporaryConnection.target}`,
+            source: sourceNodeId,
+            target: targetNodeId,
+            type: 'smoothstep',
+            animated: true,
+            style: {
+              stroke: 'rgb(234, 88, 12)', // Orange color for temporary connections
+              strokeWidth: 3,
+              strokeDasharray: '5, 5', // Dashed line for temporary
+              opacity: 0.8,
+            },
+            sourceHandle: 'bottom',
+            targetHandle: 'top',
+            markerEnd: {
+              type: MarkerType.Arrow,
+              width: 20,
+              height: 20,
+              color: 'rgb(234, 88, 12)',
+            },
+          });
+        }
+      }
+    }
+
     return { nodes, edges };
-  }, [studies, currentStudyId, selectedSegmentId, baselineStudyId]);
+  }, [
+    studies,
+    currentStudyId,
+    baselineStudyId,
+    selectedSegments,
+    relatedSegments,
+    temporaryConnection,
+  ]);
 
   const { nodes, edges } = getNodesAndEdges();
 
@@ -390,10 +426,11 @@ export function LesionFlowGraph({
       <ReactFlow
         nodes={nodes}
         edges={edges}
-        nodeTypes={nodeTypes}
+        nodeTypes={nodeTypes as React.ComponentProps<typeof ReactFlow>['nodeTypes']}
         onNodeClick={(_, node) => {
-          if (node.type === 'lesion') {
-            onSegmentSelect?.(node.data.segmentId);
+          if (node.type === 'lesion' && node.data) {
+            const data = node.data as LesionNodeData;
+            onSegmentSelect?.(data.segmentId);
           }
         }}
         defaultEdgeOptions={{
@@ -434,6 +471,13 @@ const Legend = () => (
       <div className="flex items-center gap-2">
         <div className="h-4 w-4 rounded-full border-2 border-[rgb(37,99,235)] bg-[rgb(219,234,254)]" />
         <span className="text-xs">Related Lesion</span>
+      </div>
+      <div className="flex items-center gap-2">
+        <div
+          className="h-4 w-4 rounded-full border-2 border-[rgb(234,88,12)] bg-white"
+          style={{ borderStyle: 'dashed' }}
+        />
+        <span className="text-xs">Temporary Connection</span>
       </div>
     </div>
   </div>

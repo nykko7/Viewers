@@ -15,7 +15,6 @@ import '@xyflow/react/dist/style.css';
 import type { Study, Segment } from '../../../types';
 import { cn } from '@ohif/ui-next/lib/utils';
 import { formatValue } from '../../../utils/formatValue';
-import { Home } from 'lucide-react';
 import { buildConnectionMap } from '../utils/buildConnectionMap';
 
 type LesionNodeData = {
@@ -472,13 +471,13 @@ const Legend = () => (
         <div className="h-4 w-4 rounded-full border-2 border-[rgb(37,99,235)] bg-[rgb(219,234,254)]" />
         <span className="text-xs">Related Lesion</span>
       </div>
-      <div className="flex items-center gap-2">
+      {/* <div className="flex items-center gap-2">
         <div
           className="h-4 w-4 rounded-full border-2 border-[rgb(234,88,12)] bg-white"
           style={{ borderStyle: 'dashed' }}
         />
         <span className="text-xs">Temporary Connection</span>
-      </div>
+      </div> */}
     </div>
   </div>
 );

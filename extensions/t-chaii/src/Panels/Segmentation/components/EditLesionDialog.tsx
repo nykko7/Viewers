@@ -43,7 +43,6 @@ import {
 
 import { Check, ChevronsUpDown } from 'lucide-react';
 import { CommandEmpty, CommandInput, CommandList, CommandGroup, CommandItem } from '@ohif/ui-next';
-import { ViewportSegmentationInfo } from '@ohif/ui-next/src/components/SegmentationTable';
 
 type EditLesionDialogProps = {
   open: boolean;
@@ -243,6 +242,29 @@ export function EditLesionDialog({ open, onOpenChange, segmentIndex }: EditLesio
                   (matchingSegment.lession_classification ||
                     defaultValues.lession_classification) as 'Target' | 'Non-Target' | 'New lession'
                 );
+                // Check for origins in lesion_segments
+                if (matchingSegment.lesion_segments && matchingSegment.lesion_segments.length > 0) {
+                  setSelectedOriginId(matchingSegment.lesion_segments[0]);
+                  // Set temporary connection for display
+                  setTemporaryConnection({
+                    source: matchingSegment.lesion_segments[0],
+                    target: matchingSegment.id,
+                  });
+                } else {
+                  // If no lesion_segments, check if there are connections in the connection map
+                  const connectionOrigin = getOriginFromConnectionMap(matchingSegment.id);
+                  if (connectionOrigin) {
+                    setSelectedOriginId(connectionOrigin);
+                    setTemporaryConnection({
+                      source: connectionOrigin,
+                      target: matchingSegment.id,
+                    });
+                  } else {
+                    // No connections found, this is truly a standalone lesion
+                    setSelectedOriginId(null);
+                    setTemporaryConnection({ source: null, target: null });
+                  }
+                }
                 return;
               }
             }
@@ -418,8 +440,19 @@ export function EditLesionDialog({ open, onOpenChange, segmentIndex }: EditLesio
                 target: segment.id,
               });
             } else {
-              setSelectedOriginId(null);
-              setTemporaryConnection({ source: null, target: null });
+              // If no lesion_segments, check if there are connections in the connection map
+              const connectionOrigin = getOriginFromConnectionMap(segment.id);
+              if (connectionOrigin) {
+                setSelectedOriginId(connectionOrigin);
+                setTemporaryConnection({
+                  source: connectionOrigin,
+                  target: segment.id,
+                });
+              } else {
+                // No connections found, this is truly a standalone lesion
+                setSelectedOriginId(null);
+                setTemporaryConnection({ source: null, target: null });
+              }
             }
 
             break;
@@ -451,7 +484,7 @@ export function EditLesionDialog({ open, onOpenChange, segmentIndex }: EditLesio
       affected_organs: data.affected_organs,
       lession_type: data.lession_type,
       lession_classification: data.lession_classification,
-      // Only set lesion_segments if an origin is selected
+      // Always set lesion_segments to an empty array when no origin is selected
       lesion_segments: selectedOriginId ? [selectedOriginId] : [],
     };
 
@@ -469,6 +502,17 @@ export function EditLesionDialog({ open, onOpenChange, segmentIndex }: EditLesio
   const trajectory = useLesionTrajectory(Object.values(studies), currentSegment?.id, connectionMap);
 
   const hasHistory = trajectory.length > 0;
+
+  // Check if a segment has any origins in the connection map
+  const getOriginFromConnectionMap = (segmentId: string) => {
+    let origin = null;
+    connectionMap.forEach((targets, sourceId) => {
+      if (targets.has(segmentId)) {
+        origin = sourceId;
+      }
+    });
+    return origin;
+  };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -665,6 +709,7 @@ export function EditLesionDialog({ open, onOpenChange, segmentIndex }: EditLesio
                                   .find(Boolean) || 'Select origin...'}
                               </>
                             ) : (
+                              // Default to "Select origin" unless we're sure there's no origin
                               'Select origin...'
                             )}
                             <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
@@ -682,6 +727,23 @@ export function EditLesionDialog({ open, onOpenChange, segmentIndex }: EditLesio
                             >
                               <CommandEmpty>No lesion found.</CommandEmpty>
                               <CommandGroup>
+                                {/* Add No origin option */}
+                                <CommandItem
+                                  value="no-origin"
+                                  onSelect={() => {
+                                    setSelectedOriginId(null);
+                                    setTemporaryConnection({ source: null, target: null });
+                                  }}
+                                  className="text-muted-foreground cursor-pointer font-medium"
+                                >
+                                  No origin (standalone lesion)
+                                  <Check
+                                    className={cn(
+                                      'ml-auto h-4 w-4',
+                                      selectedOriginId === null ? 'opacity-100' : 'opacity-0'
+                                    )}
+                                  />
+                                </CommandItem>
                                 {directPreviousStudy && (
                                   <React.Fragment key={directPreviousStudy.study_id}>
                                     <CommandItem
@@ -728,6 +790,14 @@ export function EditLesionDialog({ open, onOpenChange, segmentIndex }: EditLesio
                         </PopoverContent>
                       </Popover>
                     </div>
+                    {selectedOriginId === null &&
+                      temporaryConnection.source === null &&
+                      temporaryConnection.target === currentSegment?.id && (
+                        <p className="text-muted-foreground mt-1 text-xs">
+                          This lesion will be treated as standalone with no connection to previous
+                          studies.
+                        </p>
+                      )}
                   </div>
                 )}
 

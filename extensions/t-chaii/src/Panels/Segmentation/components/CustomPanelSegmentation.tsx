@@ -4,6 +4,7 @@ import { useActiveViewportSegmentationRepresentations } from '@ohif/extension-co
 import { getRenderingEngine, getEnabledElement } from '@cornerstonejs/core';
 import { CustomSegmentationSegments } from './CustomSegmentationSegments';
 import { useSegmentHandlers } from '../hooks/useSegmentHandlers';
+import { useSegmentationDataSync } from '../hooks/useSegmentationDataSync';
 import { metaData } from '@cornerstonejs/core';
 import { Types } from '@ohif/core';
 import { formatValue } from '../../../utils/formatValue';
@@ -24,9 +25,25 @@ export function CustomPanelSegmentation({
   const { segmentationsWithRepresentations, disabled } =
     useActiveViewportSegmentationRepresentations({
       servicesManager,
+      subscribeToDataModified: true,
+      debounceTime: 300,
     });
 
   const handlers = useSegmentHandlers({ servicesManager, commandsManager });
+
+  // Get the active segmentation ID
+  const activeSegmentationId =
+    segmentationsWithRepresentations[0]?.segmentation?.segmentationId ||
+    segmentationsWithRepresentations[0]?.segmentation?.id;
+
+  console.log('[CustomPanelSegmentation] Active segmentation ID:', activeSegmentationId);
+  console.log('[CustomPanelSegmentation] Segmentations:', segmentationsWithRepresentations);
+
+  // Sync segmentation data modifications with the store
+  useSegmentationDataSync({
+    servicesManager,
+    subscribeToDataModified: true,
+  });
 
   const { mode: SegmentationTableMode } = customizationService.getCustomization(
     'PanelSegmentation.tableMode',
@@ -99,8 +116,10 @@ export function CustomPanelSegmentation({
         if (segment && typeof segment.cachedStats?.volume === 'number') {
           volume += segment.cachedStats.volume;
         }
-        if (segment && typeof segment.cachedStats?.diameter === 'number') {
-          maxDiam = Math.max(maxDiam, segment.cachedStats.diameter);
+        // Check for axial_diameter first, then fall back to diameter for backwards compatibility
+        const diameter = segment.cachedStats?.axial_diameter ?? segment.cachedStats?.diameter;
+        if (segment && typeof diameter === 'number') {
+          maxDiam = Math.max(maxDiam, diameter);
         }
       });
     });
@@ -160,14 +179,14 @@ export function CustomPanelSegmentation({
           <SegmentationTable.SelectorHeader />
           <SegmentationTable.AddSegmentRow />
           {/* <SegmentationTable.Segments /> */}
-          <CustomSegmentationSegments />
+          <CustomSegmentationSegments servicesManager={servicesManager} />
         </SegmentationTable.Collapsed>
       ) : (
         <SegmentationTable.Expanded>
           <SegmentationTable.Header />
           <SegmentationTable.AddSegmentRow />
           {/* <SegmentationTable.Segments /> */}
-          <CustomSegmentationSegments />
+          <CustomSegmentationSegments servicesManager={servicesManager} />
         </SegmentationTable.Expanded>
       )}
       {segmentationsWithRepresentations.length > 0 && (

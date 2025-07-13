@@ -43,11 +43,13 @@ import {
 
 import { Check, ChevronsUpDown } from 'lucide-react';
 import { CommandEmpty, CommandInput, CommandList, CommandGroup, CommandItem } from '@ohif/ui-next';
+import { Types } from '@ohif/core';
 
 type EditLesionDialogProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   segmentIndex: number;
+  servicesManager?: Types.Extensions.ExtensionParams['servicesManager'];
 };
 
 // Add this function to find the direct previous study
@@ -156,7 +158,12 @@ type FormValues = {
   lession_classification: 'Target' | 'Non-Target' | 'New lession';
 };
 
-export function EditLesionDialog({ open, onOpenChange, segmentIndex }: EditLesionDialogProps) {
+export function EditLesionDialog({
+  open,
+  onOpenChange,
+  segmentIndex,
+  servicesManager,
+}: EditLesionDialogProps) {
   const { data, activeSegmentationId } = useSegmentationTableContext('SegmentationTable.Segments');
   const studies = useSegmentationsStore(state => state.getStudies());
   const updateSegment = useSegmentationsStore(state => state.updateSegment);
@@ -489,7 +496,72 @@ export function EditLesionDialog({ open, onOpenChange, segmentIndex }: EditLesio
     };
 
     try {
+      // Update the store
       await updateSegment(updatedSegment);
+
+      // Update the viewer if servicesManager is available
+      if (servicesManager && activeSegmentationId) {
+        const { segmentationService, cornerstoneViewportService, viewportGridService } =
+          servicesManager.services;
+
+        // Get the current segmentation to preserve existing data
+        const currentSegmentation = segmentationService.getSegmentation(activeSegmentationId);
+
+        if (currentSegmentation) {
+          // Create the segments config for the update
+          const segmentsConfig = {};
+
+          // Update only the specific segment we're editing
+          segmentsConfig[segmentIndex] = {
+            label: updatedSegment.label,
+            // Preserve other segment properties if they exist
+            ...(currentSegmentation.segments[segmentIndex] && {
+              active: currentSegmentation.segments[segmentIndex].active,
+              locked: currentSegmentation.segments[segmentIndex].locked,
+            }),
+          };
+
+          // Use the new API format for updating segmentation
+          segmentationService.addOrUpdateSegmentation({
+            segmentationId: activeSegmentationId,
+            config: {
+              segments: segmentsConfig,
+            },
+          });
+
+          // Store the custom metadata in cachedStats
+          const segmentation = segmentationService.getSegmentation(activeSegmentationId);
+          if (segmentation && segmentation.segments[segmentIndex]) {
+            segmentation.segments[segmentIndex].cachedStats = {
+              ...segmentation.segments[segmentIndex].cachedStats,
+              id: updatedSegment.id,
+              affected_organs: updatedSegment.affected_organs,
+              lession_type: updatedSegment.lession_type,
+              lession_classification: updatedSegment.lession_classification,
+              volume: updatedSegment.volume,
+              diameter: updatedSegment.axial_diameter, // For backwards compatibility
+              axial_diameter: updatedSegment.axial_diameter,
+              coronal_diameter: updatedSegment.coronal_diameter,
+              sagittal_diameter: updatedSegment.sagittal_diameter,
+            };
+          }
+
+          // Trigger a re-render of the active viewport
+          const activeViewportId = viewportGridService.getState().activeViewportId;
+          if (activeViewportId) {
+            const renderingEngine = cornerstoneViewportService.getRenderingEngine();
+            if (renderingEngine) {
+              renderingEngine.render();
+            }
+          }
+
+          // Trigger segmentation modified event to update UI
+          segmentationService._broadcastEvent(segmentationService.EVENTS.SEGMENTATION_MODIFIED, {
+            segmentationId: activeSegmentationId,
+          });
+        }
+      }
+
       // Reset temporary connection
       setTemporaryConnection({ source: null, target: null });
       onOpenChange(false);

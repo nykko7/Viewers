@@ -46,36 +46,12 @@ export function SegmentRow({
 }: SegmentRowProps) {
   const cssColor = `rgb(${color[0]},${color[1]},${color[2]})`;
 
-  const formatDetails = () => {
-    const primary = [];
-    const secondary = [];
-
-    // if (cachedStats?.volume) {
-    //   primary.push(`Volume: ${cachedStats.volume} ml`);
-    // }
-    // if (cachedStats?.diameter) {
-    //   primary.push(`Diameter: ${cachedStats.diameter} mm`);
-    // }
-    // if (cachedStats?.affected_organs) {
-    //   secondary.push(`Organ: ${cachedStats.affected_organs}`);
-    // }
-    // if (displayText) {
-    //   secondary.push(displayText);
-    // }
-
-    return {
-      primary,
-      secondary,
-    };
-  };
-
   return (
     <div className="flex flex-col">
       <DataRow
         number={segmentIndex}
         title={label}
         description={displayText}
-        details={formatDetails()}
         colorHex={cssColor}
         isSelected={active}
         isVisible={visible}

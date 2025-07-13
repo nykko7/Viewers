@@ -6,15 +6,31 @@ import { SegmentGroup } from './SegmentGroup';
 import { useSegmentGroups } from '../hooks/useSegmentGroups';
 import { cn } from '@ohif/ui-next/lib/utils';
 import { CircleDashedIcon, CircleIcon, CrosshairIcon } from 'lucide-react';
+import { Types } from '@ohif/core';
+
+type SegmentationType = {
+  segmentationId: string;
+  label: string;
+  segments: Record<string, any>;
+  [key: string]: any;
+};
+
+type RepresentationType = {
+  type: string;
+  segments: Record<string, any>;
+  [key: string]: any;
+};
 
 type CustomSegmentationSegmentsProps = {
-  segmentation?: any;
-  representation?: any;
+  segmentation?: SegmentationType;
+  representation?: RepresentationType;
+  servicesManager?: Types.Extensions.ExtensionParams['servicesManager'];
 };
 
 export function CustomSegmentationSegments({
   segmentation: initialSegmentation,
   representation: initialRepresentation,
+  servicesManager,
 }: CustomSegmentationSegmentsProps) {
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [selectedSegmentIndex, setSelectedSegmentIndex] = useState<number | null>(null);
@@ -158,6 +174,7 @@ export function CustomSegmentationSegments({
           open={editDialogOpen}
           onOpenChange={setEditDialogOpen}
           segmentIndex={selectedSegmentIndex}
+          servicesManager={servicesManager}
         />
       )}
     </>

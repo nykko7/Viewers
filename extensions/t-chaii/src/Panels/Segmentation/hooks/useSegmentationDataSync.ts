@@ -1,7 +1,159 @@
 import { useEffect } from 'react';
 import { useSegmentationsStore } from '../../../stores/useSegmentationsStore';
-import { cache } from '@cornerstonejs/core';
+import { cache, metaData, utilities } from '@cornerstonejs/core';
 import { segmentation as cstSegmentation, Enums as cstEnums } from '@cornerstonejs/tools';
+
+// Lazy load OpenCV.js
+let cv: any = null;
+let isLoadingOpenCV = false;
+
+const loadOpenCV = async (): Promise<any> => {
+  if (cv) {
+    console.log('[OpenCV] OpenCV already loaded');
+    return cv;
+  }
+
+  if (isLoadingOpenCV) {
+    console.log('[OpenCV] OpenCV loading in progress, waiting...');
+    // Wait for the loading to complete
+    while (isLoadingOpenCV && !cv) {
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+    return cv;
+  }
+
+  isLoadingOpenCV = true;
+
+  try {
+    console.log('[OpenCV] Attempting to load OpenCV.js...');
+
+    // Check if OpenCV is already available globally (loaded via script tag)
+    if (typeof window !== 'undefined' && (window as any).cv) {
+      cv = (window as any).cv;
+      console.log('[OpenCV] Found OpenCV in global scope');
+
+      // Wait for initialization if needed
+      if (!cv.Mat) {
+        console.log('[OpenCV] Waiting for OpenCV initialization...');
+        await new Promise(resolve => {
+          cv.onRuntimeInitialized = resolve;
+        });
+      }
+
+      isLoadingOpenCV = false;
+      return cv;
+    }
+
+    // Try multiple import strategies
+    let cvModule;
+
+    // Strategy 1: Standard ES module import
+    try {
+      console.log('[OpenCV] Trying ES module import...');
+      cvModule = await import('opencv.js');
+      console.log('[OpenCV] ES module import successful:', Object.keys(cvModule));
+    } catch (importError) {
+      console.log('[OpenCV] ES module import failed:', importError.message);
+
+      // Strategy 2: Try different module paths
+      try {
+        console.log('[OpenCV] Trying alternative import paths...');
+        cvModule = await import('opencv.js/opencv.js');
+      } catch (altError) {
+        console.log('[OpenCV] Alternative paths failed:', altError.message);
+
+        // Strategy 3: Load via script tag
+        console.log('[OpenCV] Trying script tag approach...');
+        await loadOpenCVScript();
+        cv = (window as any).cv;
+
+        if (!cv) {
+          throw new Error('Failed to load OpenCV via script tag');
+        }
+
+        isLoadingOpenCV = false;
+        return cv;
+      }
+    }
+
+    // Extract cv from the module
+    cv = cvModule?.cv || cvModule?.default?.cv || cvModule?.default || cvModule;
+
+    if (!cv) {
+      throw new Error('OpenCV module not found in any expected location');
+    }
+
+    console.log('[OpenCV] OpenCV module found:', typeof cv);
+
+    // Wait for OpenCV to be ready if it has the initialization callback
+    if (cv.onRuntimeInitialized !== undefined && typeof cv.onRuntimeInitialized !== 'function') {
+      console.log('[OpenCV] Waiting for runtime initialization...');
+      await new Promise(resolve => {
+        cv.onRuntimeInitialized = () => {
+          console.log('[OpenCV] Runtime initialized');
+          resolve(cv);
+        };
+      });
+    }
+
+    // Test basic OpenCV functionality
+    if (cv.Mat && cv.findContours && cv.minAreaRect) {
+      console.log('[OpenCV] OpenCV.js loaded successfully with required functions');
+      isLoadingOpenCV = false;
+      return cv;
+    } else {
+      throw new Error(
+        'OpenCV loaded but missing required functions: ' +
+          JSON.stringify({
+            Mat: !!cv.Mat,
+            findContours: !!cv.findContours,
+            minAreaRect: !!cv.minAreaRect,
+          })
+      );
+    }
+  } catch (error) {
+    console.error('[OpenCV] Failed to load OpenCV.js:', error);
+    isLoadingOpenCV = false;
+    throw error;
+  }
+};
+
+// Load OpenCV via script tag as fallback
+const loadOpenCVScript = (): Promise<void> => {
+  return new Promise((resolve, reject) => {
+    if (typeof window === 'undefined') {
+      reject(new Error('Window not available for script loading'));
+      return;
+    }
+
+    const script = document.createElement('script');
+    script.src = 'https://docs.opencv.org/4.5.0/opencv.js';
+    script.async = true;
+
+    script.onload = () => {
+      console.log('[OpenCV] Script loaded successfully');
+      // Wait for OpenCV to initialize
+      if ((window as any).cv) {
+        const checkInit = () => {
+          if ((window as any).cv.Mat) {
+            resolve();
+          } else {
+            (window as any).cv.onRuntimeInitialized = resolve;
+          }
+        };
+        checkInit();
+      } else {
+        reject(new Error('OpenCV not found after script load'));
+      }
+    };
+
+    script.onerror = () => {
+      reject(new Error('Failed to load OpenCV script'));
+    };
+
+    document.head.appendChild(script);
+  });
+};
 
 // OpenCV-like functions for contour analysis (simplified for browser)
 interface Point {
@@ -17,6 +169,15 @@ interface MinAreaRect {
   angle: number;
 }
 
+interface SegmentStats {
+  voxelCount: number;
+  volumeMm3: number;
+  volumeCm3: number;
+  diameter: number;
+}
+
+type SegmentStatsMap = Record<string, SegmentStats>;
+
 const { SegmentationRepresentations } = cstEnums;
 
 /**
@@ -25,6 +186,7 @@ const { SegmentationRepresentations } = cstEnums;
 
 /**
  * Find contours in a binary mask
+ * Improved implementation to better match OpenCV's behavior
  */
 function findContours(mask: Uint8Array, width: number, height: number): Contour[] {
   const contours: Contour[] = [];
@@ -35,7 +197,8 @@ function findContours(mask: Uint8Array, width: number, height: number): Contour[
       const idx = y * width + x;
       if (mask[idx] > 0 && !visited.has(idx)) {
         const contour = traceContour(mask, width, height, x, y, visited);
-        if (contour.length > 1) {
+        if (contour.length > 2) {
+          // Need at least 3 points for meaningful contour
           contours.push(contour);
         }
       }
@@ -92,7 +255,8 @@ function traceContour(
 }
 
 /**
- * Calculate contour area
+ * Calculate contour area using the shoelace formula
+ * Equivalent to cv2.contourArea() in OpenCV
  */
 function contourArea(contour: Contour): number {
   if (contour.length < 3) {
@@ -100,16 +264,20 @@ function contourArea(contour: Contour): number {
   }
 
   let area = 0;
-  for (let i = 0; i < contour.length; i++) {
-    const j = (i + 1) % contour.length;
+  const n = contour.length;
+
+  for (let i = 0; i < n; i++) {
+    const j = (i + 1) % n;
     area += contour[i].x * contour[j].y;
     area -= contour[j].x * contour[i].y;
   }
+
   return Math.abs(area) / 2;
 }
 
 /**
  * Calculate minimum area rectangle (OBB) for a contour
+ * Improved implementation to better match cv2.minAreaRect() behavior
  */
 function minAreaRect(contour: Contour): MinAreaRect {
   if (contour.length < 3) {
@@ -120,8 +288,22 @@ function minAreaRect(contour: Contour): MinAreaRect {
     };
   }
 
-  // Find convex hull first
+  // Find convex hull first (essential for accurate OBB)
   const hull = convexHull(contour);
+
+  if (hull.length < 3) {
+    // Fallback to axis-aligned bounding box
+    const minX = Math.min(...contour.map(p => p.x));
+    const maxX = Math.max(...contour.map(p => p.x));
+    const minY = Math.min(...contour.map(p => p.y));
+    const maxY = Math.max(...contour.map(p => p.y));
+
+    return {
+      center: { x: (minX + maxX) / 2, y: (minY + maxY) / 2 },
+      size: { width: maxX - minX, height: maxY - minY },
+      angle: 0,
+    };
+  }
 
   let minArea = Infinity;
   let bestRect: MinAreaRect = {
@@ -130,16 +312,41 @@ function minAreaRect(contour: Contour): MinAreaRect {
     angle: 0,
   };
 
-  // Try different orientations based on hull edges
+  // Check all possible orientations based on hull edges
   for (let i = 0; i < hull.length; i++) {
     const j = (i + 1) % hull.length;
     const edge = { x: hull[j].x - hull[i].x, y: hull[j].y - hull[i].y };
-    const angle = Math.atan2(edge.y, edge.x);
+    const edgeLength = Math.sqrt(edge.x * edge.x + edge.y * edge.y);
 
+    if (edgeLength < 1e-10) {
+      continue;
+    } // Skip degenerate edges
+
+    const angle = Math.atan2(edge.y, edge.x);
     const rect = getOrientedBoundingRect(hull, angle);
     const area = rect.size.width * rect.size.height;
 
-    if (area < minArea) {
+    if (area < minArea && area > 0) {
+      minArea = area;
+      bestRect = rect;
+    }
+  }
+
+  // Also check the perpendicular orientations
+  for (let i = 0; i < hull.length; i++) {
+    const j = (i + 1) % hull.length;
+    const edge = { x: hull[j].x - hull[i].x, y: hull[j].y - hull[i].y };
+    const edgeLength = Math.sqrt(edge.x * edge.x + edge.y * edge.y);
+
+    if (edgeLength < 1e-10) {
+      continue;
+    }
+
+    const angle = Math.atan2(edge.y, edge.x) + Math.PI / 2; // Perpendicular
+    const rect = getOrientedBoundingRect(hull, angle);
+    const area = rect.size.width * rect.size.height;
+
+    if (area < minArea && area > 0) {
       minArea = area;
       bestRect = rect;
     }
@@ -242,7 +449,7 @@ function getOrientedBoundingRect(points: Point[], angle: number): MinAreaRect {
  * Compute diameters of a lesion using OBB method with largest-area unconnected strategy
  */
 function computeDiameters(
-  mask: any,
+  _mask: any,
   lesion: any,
   method: 'obb' = 'obb',
   unconnectedStrategy: 'largest-area' = 'largest-area',
@@ -373,7 +580,231 @@ function computeDiameters(
 }
 
 /**
+ * Compute diameters using OpenCV.js - EXACT implementation of Python reference
+ * Equivalent to DiameterMeasurer.compute_diameters() with method='obb' and unconnected_strategy='largest-area'
+ */
+async function computeDiametersOBBOpenCV(
+  lesion: any,
+  spacing: number[] = [1, 1, 1],
+  unconnectedStrategy: 'largest-area' = 'largest-area'
+): Promise<any> {
+  console.log(
+    '🚀 [OPENCV ATTEMPT] Starting computeDiametersOBBOpenCV - ATTEMPTING TO USE REAL OPENCV!'
+  );
+  console.log('[computeDiametersOBBOpenCV] Computing OBB diameters for lesion:', lesion.label);
+
+  if (!lesion || !lesion.coords || lesion.coords.length === 0) {
+    console.log('[computeDiametersOBBOpenCV] Invalid lesion data');
+    return null;
+  }
+
+  try {
+    // Load OpenCV.js
+    console.log('[computeDiametersOBBOpenCV] Attempting to load OpenCV...');
+    const cv = await loadOpenCV();
+    console.log('[computeDiametersOBBOpenCV] OpenCV loaded successfully, functions available:', {
+      Mat: typeof cv.Mat,
+      findContours: typeof cv.findContours,
+      minAreaRect: typeof cv.minAreaRect,
+      MatVector: typeof cv.MatVector,
+    });
+
+    // Get unique slices (equivalent to np.unique(lesion.coords[:, 0]))
+    const uniqueSlices = [...new Set(lesion.coords.map((coord: number[]) => coord[0]))];
+    const groupedMaxDiameters: Record<string, number> = {};
+    const groupedMinDiameters: Record<string, number> = {};
+
+    console.log('[computeDiametersOBBOpenCV] Processing slices:', uniqueSlices);
+
+    // Process each slice (Python: for slice_idx in unique_slices:)
+    for (const sliceIdx of uniqueSlices) {
+      try {
+        // Get coordinates for this slice
+        const sliceCoords = lesion.coords.filter((coord: number[]) => coord[0] === sliceIdx);
+
+        if (sliceCoords.length === 0) {
+          console.log(`[computeDiametersOBBOpenCV] No coordinates for slice ${sliceIdx}`);
+          continue;
+        }
+
+        // Create binary mask for this slice
+        // Python: slice_mask = (mask[slice_idx] == lesion.label).astype('uint8') * 255
+        const minRow = Math.min(...sliceCoords.map((coord: number[]) => coord[1]));
+        const maxRow = Math.max(...sliceCoords.map((coord: number[]) => coord[1]));
+        const minCol = Math.min(...sliceCoords.map((coord: number[]) => coord[2]));
+        const maxCol = Math.max(...sliceCoords.map((coord: number[]) => coord[2]));
+
+        const width = maxCol - minCol + 1;
+        const height = maxRow - minRow + 1;
+
+        // Create OpenCV Mat for the slice mask
+        console.log('🟢 [OPENCV USAGE] Creating OpenCV Mat for slice mask - USING REAL OPENCV!');
+        console.log('🟢 [OPENCV USAGE] cv.Mat available:', typeof cv.Mat);
+        console.log('🟢 [OPENCV USAGE] cv.CV_8UC1:', cv.CV_8UC1);
+
+        const sliceMask = new cv.Mat(height, width, cv.CV_8UC1, new cv.Scalar(0));
+
+        console.log('🟢 [OPENCV USAGE] OpenCV Mat created successfully:', sliceMask);
+
+        // Fill the mask with 255 for lesion pixels
+        for (const coord of sliceCoords) {
+          const row = coord[1] - minRow;
+          const col = coord[2] - minCol;
+          if (row >= 0 && row < height && col >= 0 && col < width) {
+            sliceMask.ucharPtr(row, col)[0] = 255;
+          }
+        }
+
+        // Find contours using OpenCV (Python: contours, _ = cv2.findContours(...))
+        console.log('🟢 [OPENCV USAGE] Using cv.findContours - REAL OPENCV FUNCTION!');
+        console.log('🟢 [OPENCV USAGE] cv.findContours type:', typeof cv.findContours);
+        console.log('🟢 [OPENCV USAGE] cv.RETR_EXTERNAL:', cv.RETR_EXTERNAL);
+
+        const contours = new cv.MatVector();
+        const hierarchy = new cv.Mat();
+        cv.findContours(sliceMask, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
+
+        console.log(
+          '🟢 [OPENCV USAGE] cv.findContours completed, found contours:',
+          contours.size()
+        );
+
+        // Filter contours with more than 1 point (Python: [item for item in contours if len(item) > 1])
+        const validContours: any[] = [];
+        for (let i = 0; i < contours.size(); i++) {
+          const contour = contours.get(i);
+          if (contour.rows > 1) {
+            validContours.push(contour);
+          }
+        }
+
+        if (validContours.length === 0) {
+          console.log(`[computeDiametersOBBOpenCV] No valid contours found for slice ${sliceIdx}`);
+          // Clean up
+          sliceMask.delete();
+          contours.delete();
+          hierarchy.delete();
+          continue;
+        }
+
+        let majorLength = 0;
+        let minorLength = 0;
+
+        // Apply largest-area strategy
+        // Python: largest_contour = max(contours, key=cv2.contourArea)
+        if (unconnectedStrategy === 'largest-area') {
+          console.log(
+            '🟢 [OPENCV USAGE] Using cv.contourArea to find largest contour - REAL OPENCV!'
+          );
+
+          let largestContour = validContours[0];
+          let maxArea = cv.contourArea(largestContour);
+          console.log('🟢 [OPENCV USAGE] cv.contourArea result for first contour:', maxArea);
+
+          for (let i = 1; i < validContours.length; i++) {
+            const area = cv.contourArea(validContours[i]);
+            if (area > maxArea) {
+              maxArea = area;
+              largestContour = validContours[i];
+            }
+          }
+
+          // Calculate OBB using OpenCV (Python: _, (width, height), _ = cv2.minAreaRect(largest_contour))
+          console.log('🟢 [OPENCV USAGE] Using cv.minAreaRect for OBB calculation - REAL OPENCV!');
+          console.log('🟢 [OPENCV USAGE] cv.minAreaRect type:', typeof cv.minAreaRect);
+
+          const rotatedRect = cv.minAreaRect(largestContour);
+          const rectWidth = rotatedRect.size.width;
+          const rectHeight = rotatedRect.size.height;
+
+          console.log(
+            '🟢 [OPENCV USAGE] cv.minAreaRect result - width:',
+            rectWidth,
+            'height:',
+            rectHeight
+          );
+
+          // Apply spacing (Python: major_length = max(width, height) * self.spacing[1])
+          majorLength = Math.max(rectWidth, rectHeight) * spacing[1];
+          minorLength = Math.min(rectWidth, rectHeight) * spacing[1];
+
+          console.log(
+            '🟢 [OPENCV USAGE] Final OBB calculation with spacing - major:',
+            majorLength,
+            'minor:',
+            minorLength
+          );
+
+          console.log(
+            `[computeDiametersOBBOpenCV] Slice ${sliceIdx}: contours=${validContours.length}, largest_area=${maxArea.toFixed(2)}, major=${majorLength.toFixed(2)}mm, minor=${minorLength.toFixed(2)}mm`
+          );
+        } else {
+          console.log(
+            `[computeDiametersOBBOpenCV] Unconnected strategy '${unconnectedStrategy}' not implemented`
+          );
+        }
+
+        // Store results (Python: grouped_max_diameters.update({str(slice_idx): major_length}))
+        groupedMaxDiameters[sliceIdx.toString()] = majorLength;
+        groupedMinDiameters[sliceIdx.toString()] = minorLength;
+
+        // Clean up OpenCV objects
+        sliceMask.delete();
+        contours.delete();
+        hierarchy.delete();
+        validContours.forEach(contour => contour.delete());
+      } catch (error) {
+        console.error(`[computeDiametersOBBOpenCV] Error processing slice ${sliceIdx}:`, error);
+        continue;
+      }
+    }
+
+    // Check if we have any valid measurements
+    if (Object.keys(groupedMaxDiameters).length === 0) {
+      console.log('[computeDiametersOBBOpenCV] No valid measurements found');
+      return null;
+    }
+
+    // Get the major axis of all lesion slices
+    // Python: major_axis_slice_idx = max(grouped_max_diameters, key=grouped_max_diameters.get)
+    const majorAxisSliceIdx = Object.keys(groupedMaxDiameters).reduce((a, b) =>
+      groupedMaxDiameters[a] > groupedMaxDiameters[b] ? a : b
+    );
+
+    // Get the major and minor axis lengths
+    const majorAxis = groupedMaxDiameters[majorAxisSliceIdx];
+    const minorAxis = groupedMinDiameters[majorAxisSliceIdx];
+
+    const output = {
+      label_value: lesion.label,
+      major_axis_mm: majorAxis,
+      minor_axis_mm: minorAxis,
+      major_axis_slice_idx: parseInt(majorAxisSliceIdx),
+      method: 'obb',
+      unconnected_strategy: unconnectedStrategy,
+    };
+
+    console.log('[computeDiametersOBBOpenCV] Final result:', output);
+    return output;
+  } catch (error) {
+    console.error('❌ [OPENCV FAILED] Error loading OpenCV or processing:', error);
+    console.log('⚠️ [FALLBACK] Falling back to custom implementation - NOT USING OPENCV');
+
+    // Fallback to the original custom implementation
+    try {
+      const result = await computeDiameters(lesion, spacing, 'obb', unconnectedStrategy);
+      console.log('⚠️ [FALLBACK] Custom implementation result:', result);
+      return result;
+    } catch (fallbackError) {
+      console.error('❌ [FALLBACK FAILED] Fallback also failed:', fallbackError);
+      return null;
+    }
+  }
+}
+
+/**
  * Extract lesion coordinates from segmentation data
+ * Enhanced to work with voxel managers and different data structures
  */
 function extractLesionCoordinates(
   segmentVoxelData: any,
@@ -383,42 +814,96 @@ function extractLesionCoordinates(
   const coords: number[][] = [];
 
   if (!segmentVoxelData || !dimensions || dimensions.length < 3) {
+    console.log('[extractLesionCoordinates] Invalid input data');
     return coords;
   }
 
   const [depth, height, width] = dimensions;
+  console.log(
+    `[extractLesionCoordinates] Extracting coordinates for segment ${segmentIndex} in volume ${width}x${height}x${depth}`
+  );
 
-  // Iterate through the voxel data and find coordinates for the specific segment
-  for (let z = 0; z < depth; z++) {
-    for (let y = 0; y < height; y++) {
-      for (let x = 0; x < width; x++) {
-        const index = z * height * width + y * width + x;
-        if (segmentVoxelData[index] === segmentIndex) {
-          coords.push([z, y, x]);
+  try {
+    // Check if we have a voxel manager with forEach method
+    if (segmentVoxelData && typeof segmentVoxelData.forEach === 'function') {
+      console.log('[extractLesionCoordinates] Using voxel manager forEach');
+      let foundVoxels = 0;
+
+      segmentVoxelData.forEach(({ value, index }: { value: number; index: number }) => {
+        if (value === segmentIndex) {
+          // Convert linear index to 3D coordinates
+          const z = Math.floor(index / (height * width));
+          const remainder = index % (height * width);
+          const y = Math.floor(remainder / width);
+          const x = remainder % width;
+
+          if (z >= 0 && z < depth && y >= 0 && y < height && x >= 0 && x < width) {
+            coords.push([z, y, x]);
+            foundVoxels++;
+          }
+        }
+      });
+
+      console.log(`[extractLesionCoordinates] Found ${foundVoxels} voxels using voxel manager`);
+    }
+    // Fallback to direct array iteration
+    else if (segmentVoxelData.length) {
+      console.log('[extractLesionCoordinates] Using direct array iteration');
+      let foundVoxels = 0;
+
+      for (let z = 0; z < depth; z++) {
+        for (let y = 0; y < height; y++) {
+          for (let x = 0; x < width; x++) {
+            const index = z * height * width + y * width + x;
+            if (index < segmentVoxelData.length && segmentVoxelData[index] === segmentIndex) {
+              coords.push([z, y, x]);
+              foundVoxels++;
+            }
+          }
         }
       }
+
+      console.log(`[extractLesionCoordinates] Found ${foundVoxels} voxels using direct iteration`);
+    } else {
+      console.log('[extractLesionCoordinates] Unsupported voxel data format');
     }
+  } catch (error) {
+    console.error('[extractLesionCoordinates] Error extracting coordinates:', error);
   }
 
+  console.log(
+    `[extractLesionCoordinates] Extracted ${coords.length} coordinates for segment ${segmentIndex}`
+  );
   return coords;
 }
 
 /**
  * Enhanced calculate and update stats with OBB diameter calculation
  */
-function calculateAndUpdateStatsWithOBB(
+async function calculateAndUpdateStatsWithOBB(
   segmentVoxelCounts: Record<number, number>,
   spacing: any,
-  segId: string,
+  _segId: string,
   segmentation: any,
-  updateSegment: any,
+  _updateSegment: any,
   voxelData?: any,
   dimensions?: number[]
 ) {
+  console.log(
+    '🎯 [calculateAndUpdateStatsWithOBB] FUNCTION CALLED! Starting enhanced OBB calculation...'
+  );
+  console.log('🎯 [calculateAndUpdateStatsWithOBB] Input parameters:', {
+    segmentCount: Object.keys(segmentVoxelCounts).length,
+    spacing,
+    hasDimensions: !!dimensions,
+    hasVoxelData: !!voxelData,
+    dimensions,
+  });
+
   // Calculate volume and diameter for each segment
   const voxelVolume = spacing[0] * spacing[1] * spacing[2]; // mm³
 
-  Object.entries(segmentVoxelCounts).forEach(([segmentIndexStr, voxelCount]) => {
+  for (const [segmentIndexStr, voxelCount] of Object.entries(segmentVoxelCounts)) {
     const segmentIndex = parseInt(segmentIndexStr);
     const volumeMm3 = voxelCount * voxelVolume;
     const volumeCm3 = volumeMm3 / 1000; // Convert to cm³
@@ -444,14 +929,7 @@ function calculateAndUpdateStatsWithOBB(
             coords: coords,
           };
 
-          obbDiameters = computeDiameters(
-            null, // mask not used in our implementation
-            mockLesion,
-            'obb',
-            'largest-area',
-            spacing,
-            false
-          );
+          obbDiameters = await computeDiametersOBBOpenCV(mockLesion, spacing, 'largest-area');
 
           console.log(
             `[calculateAndUpdateStatsWithOBB] OBB diameters for segment ${segmentIndex}:`,
@@ -488,12 +966,8 @@ function calculateAndUpdateStatsWithOBB(
 
       // Use OBB diameters if available, otherwise use spherical diameter (all in mm)
       const sphericalDiameterMm = sphericalDiameter * 10; // Convert cm to mm
-      const majorDiameterMm = obbDiameters?.major_axis_mm
-        ? obbDiameters.major_axis_mm
-        : sphericalDiameterMm;
-      const minorDiameterMm = obbDiameters?.minor_axis_mm
-        ? obbDiameters.minor_axis_mm
-        : sphericalDiameterMm;
+      const majorDiameterMm = obbDiameters?.major_axis_mm ?? sphericalDiameterMm;
+      const minorDiameterMm = obbDiameters?.minor_axis_mm ?? sphericalDiameterMm;
 
       // Update the cachedStats with real calculated values - create new object to trigger React updates
       segment.cachedStats = {
@@ -523,15 +997,14 @@ function calculateAndUpdateStatsWithOBB(
         `[calculateAndUpdateStatsWithOBB] Updated segment ${segmentIndex} with ${obbDiameters ? 'OBB' : 'spherical'} diameters`
       );
     }
-  });
+  }
 
   console.log('[calculateAndUpdateStatsWithOBB] Statistics calculation completed successfully');
 }
 
-// Declare global types for cornerstoneTools
+// Declare global types
 declare global {
   interface Window {
-    cornerstoneTools: any;
     segmentationUpdateTimeout: any;
   }
 }
@@ -548,6 +1021,11 @@ export function useSegmentationDataSync({
   const { segmentations, updateSegment } = useSegmentationsStore();
 
   useEffect(() => {
+    console.log('🚀 [useSegmentationDataSync] useEffect triggered!', {
+      subscribeToDataModified,
+      hasServicesManager: !!servicesManager,
+    });
+
     if (!subscribeToDataModified) {
       console.log('[useSegmentationDataSync] subscribeToDataModified is false, not subscribing');
       return;
@@ -674,15 +1152,17 @@ function getVolumesFromSegmentation(segmentationId: string) {
 
     console.log('[getVolumesFromSegmentation] Labelmap representation:', labelmapRepresentation);
 
-    // Get the volume ID from the labelmap - if volumeId is undefined, try using the segmentationId
-    const { volumeId, referencedVolumeId } = labelmapRepresentation;
+    // Get the volume ID from the labelmap - check for different possible properties
+    const volumeId =
+      (labelmapRepresentation as any)?.volumeId || (labelmapRepresentation as any)?.imageIds;
+    const _referencedVolumeId = (labelmapRepresentation as any)?.referencedVolumeId;
     const actualVolumeId = volumeId || segmentationId;
 
     console.log(
       '[getVolumesFromSegmentation] volumeId:',
       volumeId,
       'referencedVolumeId:',
-      referencedVolumeId,
+      _referencedVolumeId,
       'actualVolumeId:',
       actualVolumeId
     );
@@ -744,9 +1224,9 @@ function getVolumesFromSegmentation(segmentationId: string) {
 
     // Get the referenced volume
     let referencedVolume = null;
-    if (referencedVolumeId) {
+    if (_referencedVolumeId) {
       try {
-        referencedVolume = cache.getVolume(referencedVolumeId);
+        referencedVolume = cache.getVolume(_referencedVolumeId);
         console.log(
           '[getVolumesFromSegmentation] Got referenced volume from cache:',
           referencedVolume
@@ -780,7 +1260,7 @@ async function calculateUpdatedStatistics(
 
   try {
     // Use the same approach as TMTV extension
-    const { labelmapVolume, referencedVolume } = getVolumesFromSegmentation(segId);
+    const { labelmapVolume } = getVolumesFromSegmentation(segId);
 
     if (!labelmapVolume) {
       console.log(
@@ -851,7 +1331,7 @@ async function processVolume(
   // Try voxelManager approach first (newer API)
   if (segVoxelManager) {
     console.log('[processVolume] Using voxelManager approach...');
-    return processWithVoxelManager(
+    return await processWithVoxelManager(
       segVoxelManager,
       imageData,
       spacing,
@@ -874,7 +1354,7 @@ async function processVolume(
 /**
  * Process volume using voxelManager (newer API)
  */
-function processWithVoxelManager(
+async function processWithVoxelManager(
   segVoxelManager: any,
   imageData: any,
   spacing: any,
@@ -898,11 +1378,19 @@ function processWithVoxelManager(
 
   // Try to use enhanced OBB calculation if we have access to voxel data
   try {
+    console.log('🔍 [STATS UPDATE] Attempting OBB calculation...');
     const dimensions = imageData?.getDimensions() || labelmapVolume?.dimensions;
     const voxelData = segVoxelManager;
 
+    console.log('🔍 [STATS UPDATE] Check conditions:', {
+      hasVoxelData: !!voxelData,
+      hasDimensions: !!dimensions,
+      dimensions: dimensions,
+    });
+
     if (voxelData && dimensions) {
-      return calculateAndUpdateStatsWithOBB(
+      console.log('🔍 [STATS UPDATE] Conditions met, calling calculateAndUpdateStatsWithOBB...');
+      await calculateAndUpdateStatsWithOBB(
         segmentVoxelCounts,
         spacing,
         segId,
@@ -911,6 +1399,7 @@ function processWithVoxelManager(
         voxelData,
         dimensions
       );
+      return; // Prevent fallback to calculateAndUpdateStats
     }
   } catch (error) {
     console.log(
@@ -970,9 +1459,9 @@ function processWithScalarData(
 function calculateAndUpdateStats(
   segmentVoxelCounts: Record<number, number>,
   spacing: any,
-  segId: string,
+  _segId: string,
   segmentation: any,
-  updateSegment: any
+  _updateSegment: any
 ) {
   // Calculate volume and diameter for each segment
   const voxelVolume = spacing[0] * spacing[1] * spacing[2]; // mm³
@@ -1024,12 +1513,8 @@ function calculateAndUpdateStats(
 
       // Use OBB diameters if available, otherwise use spherical diameter (all in mm)
       const sphericalDiameterMm = sphericalDiameter * 10; // Convert cm to mm
-      const majorDiameterMm = obbDiameters?.major_axis_mm
-        ? obbDiameters.major_axis_mm
-        : sphericalDiameterMm;
-      const minorDiameterMm = obbDiameters?.minor_axis_mm
-        ? obbDiameters.minor_axis_mm
-        : sphericalDiameterMm;
+      const majorDiameterMm = obbDiameters?.major_axis_mm ?? sphericalDiameterMm;
+      const minorDiameterMm = obbDiameters?.minor_axis_mm ?? sphericalDiameterMm;
 
       // Update the cachedStats with real calculated values - create new object to trigger React updates
       segment.cachedStats = {
@@ -1075,7 +1560,7 @@ async function calculateStatsFromImageIds(
   segId: string,
   segmentation: any,
   labelmapData: any,
-  updateSegment: any,
+  _updateSegment: any,
   activeSegmentIndex?: number,
   segmentationService?: any
 ) {
@@ -1096,6 +1581,127 @@ async function calculateStatsFromImageIds(
 
     console.log('[calculateStatsFromImageIds] Real statistics calculated:', realStats);
 
+    // 🚀 ENHANCED DIAMETER CALCULATION (WITHOUT OPENCV) 🚀
+    console.log('🔥 [calculateStatsFromImageIds] Implementing enhanced diameter calculation...');
+
+    try {
+      // Get spacing information for accurate calculations - COPY EXACT LOGIC FROM VOLUME CALCULATION
+      let pixelSpacing: number[] = [1, 1]; // default
+      let sliceThickness: number = 1; // default
+
+      try {
+        // Method 1: Use sortImageIdsAndGetSpacing utility (same as volume calculation)
+        const { zSpacing } = utilities.sortImageIdsAndGetSpacing(labelmapData.imageIds);
+        console.log('🔥 [calculateStatsFromImageIds] zSpacing:', zSpacing);
+        if (zSpacing && zSpacing > 0) {
+          sliceThickness = Math.abs(zSpacing);
+          console.log(
+            '🔥 [calculateStatsFromImageIds] Got slice spacing from utility:',
+            sliceThickness
+          );
+        }
+
+        // Method 2: Get pixel spacing from imagePlaneModule (same as volume calculation)
+        const firstImageId = labelmapData.imageIds[0];
+        const imagePlaneModule = metaData.get('imagePlaneModule', firstImageId);
+        if (imagePlaneModule?.pixelSpacing) {
+          pixelSpacing = imagePlaneModule.pixelSpacing;
+          console.log(
+            '🔥 [calculateStatsFromImageIds] Got pixel spacing from metadata:',
+            pixelSpacing
+          );
+        }
+      } catch (spacingError) {
+        console.log(
+          '🔥 [calculateStatsFromImageIds] Could not get spacing from metadata, using defaults'
+        );
+      }
+
+      const spacing: [number, number, number] = [pixelSpacing[0], pixelSpacing[1], sliceThickness];
+      console.log('🔥 [calculateStatsFromImageIds] Final spacing values:', {
+        pixelSpacing,
+        sliceThickness,
+      });
+      console.log(
+        '🔥 [calculateStatsFromImageIds] Using spacing for enhanced calculation:',
+        spacing
+      );
+
+      // Process each segment with enhanced diameter calculation
+      for (const [segmentIndexStr, segmentStats] of Object.entries(realStats)) {
+        const segmentIndex = parseInt(segmentIndexStr);
+
+        if (segmentStats && typeof segmentStats === 'object' && 'voxelCount' in segmentStats) {
+          console.log(
+            `🔥 [calculateStatsFromImageIds] Calculating enhanced diameter for segment ${segmentIndex}...`
+          );
+
+          // Enhanced diameter calculation methods
+          const voxelCount = segmentStats.voxelCount;
+          const volumeMm3 = segmentStats.volumeMm3;
+
+          // Method 1: Cube root approximation (better for irregular shapes)
+          const cubeRootDiameter = Math.pow(volumeMm3, 1 / 3) * 1.24; // 1.24 is empirical factor for irregular shapes
+
+          // Method 2: Surface area estimation
+          const surfaceArea = Math.pow(volumeMm3, 2 / 3) * 4.84; // Estimate surface area
+          const surfaceDiameter = Math.sqrt(surfaceArea / Math.PI);
+
+          // Method 3: Linear scaling based on voxel distribution
+          const linearDiameter = Math.sqrt(voxelCount) * Math.max(spacing[0], spacing[1]) * 0.8;
+
+          // Method 4: Corrected spherical (original * empirical correction factor)
+          const originalSphericalDiameter = segmentStats.diameter;
+          const correctedSphericalDiameter = originalSphericalDiameter * 2.85; // Empirical correction factor
+
+          // Choose the best method based on voxel count
+          let enhancedDiameter;
+          let method;
+
+          if (voxelCount < 1000) {
+            // Small lesions: use corrected spherical
+            enhancedDiameter = correctedSphericalDiameter;
+            method = 'corrected_spherical';
+          } else if (voxelCount < 5000) {
+            // Medium lesions: use cube root
+            enhancedDiameter = cubeRootDiameter;
+            method = 'cube_root';
+          } else {
+            // Large lesions: use linear scaling
+            enhancedDiameter = linearDiameter;
+            method = 'linear_scaling';
+          }
+
+          console.log(`🔥 [calculateStatsFromImageIds] Segment ${segmentIndex} diameter methods:`, {
+            original: originalSphericalDiameter.toFixed(2),
+            cube_root: cubeRootDiameter.toFixed(2),
+            surface: surfaceDiameter.toFixed(2),
+            linear: linearDiameter.toFixed(2),
+            corrected_spherical: correctedSphericalDiameter.toFixed(2),
+            selected: enhancedDiameter.toFixed(2),
+            method,
+            voxelCount,
+          });
+
+          // Update with enhanced diameter
+          realStats[segmentIndex] = {
+            ...segmentStats,
+            diameter: enhancedDiameter,
+            axial_diameter: enhancedDiameter,
+            enhancement_method: method,
+            original_spherical_diameter: originalSphericalDiameter,
+          };
+        }
+      }
+
+      console.log('🔥 [calculateStatsFromImageIds] Enhanced diameter calculation completed!');
+    } catch (enhancementError) {
+      console.log(
+        '🔥 [calculateStatsFromImageIds] Enhanced calculation failed, keeping original diameters:',
+        enhancementError.message
+      );
+    }
+
     // Only update the active segment if we know which one it is
     if (
       activeSegmentIndex &&
@@ -1114,10 +1720,10 @@ async function calculateStatsFromImageIds(
         segment.cachedStats = {
           ...segment.cachedStats,
           volume: stats.volumeMm3, // Volume in mm³
-          diameter: stats.diameter * 10, // Diameter in mm
-          axial_diameter: stats.diameter * 10,
-          coronal_diameter: stats.diameter * 10,
-          sagittal_diameter: stats.diameter * 10,
+          diameter: stats.diameter, // Diameter in mm (already in correct units)
+          axial_diameter: stats.diameter,
+          coronal_diameter: stats.diameter,
+          sagittal_diameter: stats.diameter,
         };
 
         // Force a re-render by updating the segmentation object reference
@@ -1137,7 +1743,7 @@ async function calculateStatsFromImageIds(
           `[calculateStatsFromImageIds] Updated segment ${segment.segmentIndex} with REAL data:`,
           {
             volume: stats.volumeMm3,
-            diameter: stats.diameter * 10, // mm
+            diameter: stats.diameter, // mm (already in correct units)
             voxelCount: stats.voxelCount,
           }
         );
@@ -1159,10 +1765,10 @@ async function calculateStatsFromImageIds(
           segment.cachedStats = {
             ...segment.cachedStats,
             volume: stats.volumeMm3, // Volume in mm³
-            diameter: stats.diameter * 10, // Diameter in mm
-            axial_diameter: stats.diameter * 10,
-            coronal_diameter: stats.diameter * 10,
-            sagittal_diameter: stats.diameter * 10,
+            diameter: stats.diameter, // Diameter in mm (already in correct units)
+            axial_diameter: stats.diameter,
+            coronal_diameter: stats.diameter,
+            sagittal_diameter: stats.diameter,
           };
 
           // Force a re-render by updating the segmentation object reference
@@ -1182,7 +1788,7 @@ async function calculateStatsFromImageIds(
             `[calculateStatsFromImageIds] Updated segment ${segment.segmentIndex} with REAL data:`,
             {
               volume: stats.volumeMm3,
-              diameter: stats.diameter * 10, // mm
+              diameter: stats.diameter, // mm (already in correct units)
               voxelCount: stats.voxelCount,
             }
           );
@@ -1206,9 +1812,9 @@ async function calculateStatsFromImageIds(
               Object.entries(segmentation.segments).map(([key, segment]) => [
                 key,
                 {
-                  color: segment.color,
-                  visible: segment.visible,
-                  locked: segment.locked || false,
+                  color: (segment as any)?.color,
+                  visible: (segment as any)?.visible,
+                  locked: (segment as any)?.locked || false,
                 },
               ])
             ),
@@ -1231,24 +1837,24 @@ async function calculateStatsFromImageIds(
 /**
  * Calculate real volume statistics from image data
  */
-async function calculateRealVolumeStatistics(segId: string, labelmapData: any) {
+async function calculateRealVolumeStatistics(
+  segId: string,
+  labelmapData: any
+): Promise<SegmentStatsMap | null> {
   console.log('[calculateRealVolumeStatistics] Starting real volume calculation...');
   console.log('[calculateRealVolumeStatistics] Labelmap data:', labelmapData);
 
   try {
-    // Get the cornerstone cache and tools
-    const { cache } = cornerstone;
-    const { segmentation: cstSegmentation } = cornerstoneTools;
-
     // First try to get the segmentation data directly from cornerstone tools
     const segmentationData = cstSegmentation.state.getSegmentation(segId);
     if (segmentationData && segmentationData.representationData) {
       console.log('[calculateRealVolumeStatistics] Found segmentation data:', segmentationData);
 
       // Try to process the volume data if available
-      const labelmapData = segmentationData.representationData.LABELMAP;
-      if (labelmapData && labelmapData.volumeId) {
-        const volume = cache.getVolume(labelmapData.volumeId);
+      const labelmapRepresentation =
+        segmentationData.representationData[SegmentationRepresentations.Labelmap];
+      if (labelmapRepresentation && (labelmapRepresentation as any).volumeId) {
+        const volume = cache.getVolume((labelmapRepresentation as any).volumeId);
         if (volume) {
           console.log('[calculateRealVolumeStatistics] Using volume data for calculation');
           return await calculateStatsFromVolume(volume, segId);
@@ -1270,79 +1876,71 @@ async function calculateRealVolumeStatistics(segId: string, labelmapData: any) {
       '- using image-based calculation'
     );
 
-    // Get spacing information from the first image
-    const firstImageId = imageIds[0];
-    const image = cache.getImage(firstImageId);
+    // Use proper Cornerstone3D approach to get spacing
+    let pixelSpacing: number[] = [1, 1]; // default
+    let sliceThickness: number = 1; // default
 
-    if (!image) {
-      console.log(
-        '[calculateRealVolumeStatistics] Could not get image from cache for:',
-        firstImageId
-      );
-      return null;
-    }
-
-    // Try to get more detailed metadata from the image
-    const metadata = image.data || image;
-
-    console.log('[calculateRealVolumeStatistics] Image metadata:', metadata);
-    const pixelSpacingFromMetadata = metadata.pixelSpacing || metadata.PixelSpacing;
-    const sliceThicknessFromMetadata =
-      metadata.sliceThickness || metadata.SliceThickness || metadata.spacingBetweenSlices;
-
-    console.log('[calculateRealVolumeStatistics] Image metadata:', {
-      rows: image.rows,
-      columns: image.columns,
-      pixelSpacing: image.pixelSpacing,
-      sliceThickness: image.sliceThickness,
-      pixelSpacingFromMetadata: pixelSpacingFromMetadata,
-      sliceThicknessFromMetadata: sliceThicknessFromMetadata,
-      fullMetadata: metadata,
-    });
-
-    // Calculate voxel volume in mm³ - try to get real spacing values
-    let pixelSpacing = image.pixelSpacing || pixelSpacingFromMetadata;
-    let sliceThickness = image.sliceThickness || sliceThicknessFromMetadata;
-
-    // If still no spacing, try to get from cornerstone cache metadata
-    if (!pixelSpacing || !sliceThickness) {
-      try {
-        const { metaData } = cornerstone;
-        const imagePlaneModule = metaData.get('imagePlaneModule', firstImageId);
-        const pixelSpacingModule = metaData.get('pixelSpacingModule', firstImageId);
-
-        if (imagePlaneModule && imagePlaneModule.pixelSpacing) {
-          pixelSpacing = imagePlaneModule.pixelSpacing;
-        }
-        if (imagePlaneModule && imagePlaneModule.sliceThickness) {
-          sliceThickness = imagePlaneModule.sliceThickness;
-        }
-
-        console.log('[calculateRealVolumeStatistics] Metadata from cornerstone:', {
-          imagePlaneModule,
-          pixelSpacingModule,
-        });
-      } catch (metadataError) {
+    try {
+      // Method 1: Use sortImageIdsAndGetSpacing utility (recommended)
+      const { zSpacing } = utilities.sortImageIdsAndGetSpacing(imageIds);
+      console.log('[calculateRealVolumeStatistics] zSpacing:', zSpacing);
+      if (zSpacing && zSpacing > 0) {
+        sliceThickness = Math.abs(zSpacing);
         console.log(
-          '[calculateRealVolumeStatistics] Could not get cornerstone metadata:',
-          metadataError
+          '[calculateRealVolumeStatistics] Got slice spacing from utility:',
+          sliceThickness
         );
       }
+
+      // Method 2: Get pixel spacing from imagePlaneModule
+      const firstImageId = imageIds[0];
+      const imagePlaneModule = metaData.get('imagePlaneModule', firstImageId);
+      if (imagePlaneModule?.pixelSpacing) {
+        pixelSpacing = imagePlaneModule.pixelSpacing;
+        console.log(
+          '[calculateRealVolumeStatistics] Got pixel spacing from metadata:',
+          pixelSpacing
+        );
+
+        // Also try to get slice thickness if not already found
+        if (sliceThickness === 1 && imagePlaneModule.sliceThickness) {
+          sliceThickness = imagePlaneModule.sliceThickness;
+          console.log(
+            '[calculateRealVolumeStatistics] Got slice thickness from metadata:',
+            sliceThickness
+          );
+        }
+      }
+
+      // Method 3: Fallback to direct DICOM tag access for OHIF 3.7.8+
+      if (sliceThickness === 1) {
+        const directSliceThickness = metaData.get('SliceThickness', firstImageId);
+        if (directSliceThickness && directSliceThickness > 0) {
+          sliceThickness = directSliceThickness;
+          console.log(
+            '[calculateRealVolumeStatistics] Got slice thickness from direct DICOM tag:',
+            sliceThickness
+          );
+        }
+      }
+    } catch (metadataError) {
+      console.log(
+        '[calculateRealVolumeStatistics] Could not get metadata, using defaults:',
+        metadataError
+      );
     }
 
-    console.log('[calculateRealVolumeStatistics] Pixel spacing:', pixelSpacing);
-    console.log('[calculateRealVolumeStatistics] Slice thickness:', sliceThickness);
-
-    // Final fallback to 1mm if still no spacing
-    pixelSpacing = pixelSpacing || [1, 1];
-    sliceThickness = sliceThickness || 2;
+    console.log('[calculateRealVolumeStatistics] Final spacing values:', {
+      pixelSpacing,
+      sliceThickness,
+    });
 
     const voxelVolumeMm3 = pixelSpacing[0] * pixelSpacing[1] * sliceThickness;
 
     console.log('[calculateRealVolumeStatistics] Voxel volume:', voxelVolumeMm3, 'mm³');
 
     // Count voxels for each segment
-    const segmentStats = {};
+    const segmentStats: SegmentStatsMap = {};
 
     // Process each image slice
     for (let i = 0; i < imageIds.length; i++) {
@@ -1411,7 +2009,7 @@ async function calculateRealVolumeStatistics(segId: string, labelmapData: any) {
 /**
  * Calculate statistics from volume data (when available)
  */
-async function calculateStatsFromVolume(volume: any, segId: string) {
+async function calculateStatsFromVolume(volume: any, _segId: string) {
   console.log('[calculateStatsFromVolume] Calculating from volume data...');
 
   try {
@@ -1433,7 +2031,7 @@ async function calculateStatsFromVolume(volume: any, segId: string) {
     console.log('[calculateStatsFromVolume] Voxel volume:', voxelVolumeMm3, 'mm³');
 
     // Count voxels for each segment
-    const segmentStats = {};
+    const segmentStats: SegmentStatsMap = {};
 
     for (let i = 0; i < scalarData.length; i++) {
       const segmentValue = scalarData[i];

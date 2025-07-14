@@ -43,7 +43,8 @@
   },
   "dependencies": {
     "@babel/runtime": "^7.20.13",
-    "@xyflow/react": "^12.3.6"
+    "@xyflow/react": "^12.3.6",
+    "opencv.js": "^1.2.1"
   },
   "devDependencies": {
     "@babel/core": "7.24.7",

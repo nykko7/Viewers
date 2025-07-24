@@ -26,7 +26,7 @@ export function CustomPanelSegmentation({
     useActiveViewportSegmentationRepresentations({
       servicesManager,
       subscribeToDataModified: true,
-      debounceTime: 300,
+      debounceTime: 50, // Reduced from 300ms to 50ms for more responsive updates
     });
 
   const handlers = useSegmentHandlers({ servicesManager, commandsManager });

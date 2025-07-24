@@ -3,7 +3,8 @@
     "allow": [
       "mcp__ide__getDiagnostics",
       "Bash(yarn add:*)",
-      "Bash(yarn install)"
+      "Bash(yarn install)",
+      "Bash(find:*)"
     ],
     "deny": []
   }

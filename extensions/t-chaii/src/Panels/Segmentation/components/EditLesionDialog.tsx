@@ -109,7 +109,7 @@ function StudyGroupRows({
         <div
           key={segmentData.segment.id}
           className={cn(
-            'text-secondary-foreground grid grid-cols-6 gap-4 px-4 py-3 text-sm',
+            'text-secondary-foreground grid grid-cols-4 gap-4 px-4 py-3 text-sm',
             'cursor-pointer transition-colors hover:bg-[#2563eb]/10',
             segmentData.segment.id === selectedSegmentId &&
               'border-l-4 !border-l-[#2563eb] bg-[#2563eb]/10',
@@ -132,18 +132,14 @@ function StudyGroupRows({
             {segmentData.isMerge && <span className="ml-2 text-blue-500">(merge)</span>}
           </div>
           <div>{formatValue(segmentData.segment.volume)}</div>
-          <div>{formatValue(segmentData.segment.axial_diameter)}</div>
-          <div>{formatValue(segmentData.segment.coronal_diameter)}</div>
-          <div>{formatValue(segmentData.segment.sagittal_diameter)}</div>
+          <div>{formatValue((segmentData.segment as any).diameter || segmentData.segment.axial_diameter)}</div>
         </div>
       ))}
       {segments.length > 1 && (
-        <div className="text-secondary-foreground grid grid-cols-6 gap-4 bg-gray-50/10 px-4 py-2 text-sm font-semibold">
+        <div className="text-secondary-foreground grid grid-cols-4 gap-4 bg-gray-50/10 px-4 py-2 text-sm font-semibold">
           <div></div>
           <div>Total</div>
           <div>{formatValue(totalVolume)}</div>
-          <div>-</div>
-          <div>-</div>
           <div>-</div>
         </div>
       )}
@@ -283,7 +279,52 @@ export function EditLesionDialog({
     }
   }, [open, activeSegmentation, segmentIndex, studies, reset, setValue, defaultValues]);
 
-  // Get current segment and its study data
+  // State to force re-render when segments are updated
+  const [forceUpdate, setForceUpdate] = useState(0);
+
+  // Listen for segment statistics updates to sync with brush/eraser edits
+  useEffect(() => {
+    if (!open) {
+      console.log('[EditLesionDialog] Dialog not open, skipping event listener setup');
+      return;
+    }
+
+    console.log(`[EditLesionDialog] Setting up event listener for segmentation ${activeSegmentationId}`);
+
+    const handleStatsUpdate = (event: CustomEvent) => {
+      console.log('[EditLesionDialog] Received segmentation-stats-updated event:', event.detail);
+      const { segmentationId, segmentIndex: updatedSegmentIndex } = event.detail;
+      
+      // Always log the event for debugging
+      console.log(`[EditLesionDialog] Stats update - segmentationId: ${segmentationId}, updatedSegmentIndex: ${updatedSegmentIndex}, activeSegmentationId: ${activeSegmentationId}`);
+      
+      // Update for any segment in the current segmentation (not just the current segment)
+      if (segmentationId === activeSegmentationId) {
+        console.log(`[EditLesionDialog] Segmentation matches, forcing re-render`);
+        
+        // Force component re-render to show updated values
+        setForceUpdate(prev => prev + 1);
+        
+        // If the updated segment matches our current segment, log it
+        if (updatedSegmentIndex === segmentIndex) {
+          console.log(`[EditLesionDialog] Current segment ${segmentIndex} was updated`);
+        }
+      } else {
+        console.log(`[EditLesionDialog] Segmentation mismatch, ignoring update`);
+      }
+    };
+
+    // Listen for the same event that SegmentStats uses
+    window.addEventListener('segmentation-stats-updated', handleStatsUpdate as EventListener);
+    console.log('[EditLesionDialog] Event listener added for segmentation-stats-updated');
+
+    return () => {
+      console.log('[EditLesionDialog] Removing event listener');
+      window.removeEventListener('segmentation-stats-updated', handleStatsUpdate as EventListener);
+    };
+  }, [open, activeSegmentationId, segmentIndex]);
+
+  // Get current segment and its study data (include forceUpdate to refresh when segments change)
   const { currentSegment, segmentStudy } = React.useMemo(() => {
     let foundSegment = null;
     let foundStudy = null;
@@ -365,7 +406,7 @@ export function EditLesionDialog({
       currentSegment: foundSegment,
       segmentStudy: foundStudy,
     };
-  }, [selectedSegmentId, studies, activeSegmentation, segmentIndex]);
+  }, [selectedSegmentId, studies, activeSegmentation, segmentIndex, forceUpdate]);
 
   // Get the direct previous study
   const directPreviousStudy = React.useMemo(
@@ -397,12 +438,16 @@ export function EditLesionDialog({
 
   // Handler for segment selection from the graph
   const handleSegmentSelect = (segmentId: string) => {
+    console.log(`[EditLesionDialog] handleSegmentSelect called with segmentId: ${segmentId}`);
+    
     // If this segment already selected, do nothing
     if (segmentId === selectedSegmentId) {
+      console.log(`[EditLesionDialog] Segment ${segmentId} already selected, skipping`);
       return;
     }
 
     setSelectedSegmentId(segmentId);
+    console.log(`[EditLesionDialog] Set selectedSegmentId to: ${segmentId}`);
 
     // Find segment data to populate form
     for (const study of Object.values(studies)) {
@@ -422,6 +467,14 @@ export function EditLesionDialog({
 
           const segment = seg.segments.find(s => s.id === segmentId);
           if (segment) {
+            console.log(`[EditLesionDialog] Found segment:`, {
+              id: segment.id,
+              label: segment.label,
+              lesion_segments: segment.lesion_segments,
+              study_id: study.study_id,
+              study_date: study.study_date
+            });
+            
             // Update form values
             setValue('label', segment.label || `Segment ${segmentIndex + 1}`);
             setValue('affected_organs', segment.affected_organs || '');
@@ -437,8 +490,13 @@ export function EditLesionDialog({
                 | 'New lession'
             );
 
+            // Debug connection map
+            console.log(`[EditLesionDialog] Connection map:`, connectionMap);
+            console.log(`[EditLesionDialog] Looking for origins of segment: ${segment.id}`);
+            
             // Update origin
             if (segment.lesion_segments && segment.lesion_segments.length > 0) {
+              console.log(`[EditLesionDialog] Found lesion_segments:`, segment.lesion_segments);
               setSelectedOriginId(segment.lesion_segments[0]);
 
               // Also set temporary connection for display
@@ -447,15 +505,20 @@ export function EditLesionDialog({
                 target: segment.id,
               });
             } else {
+              console.log(`[EditLesionDialog] No lesion_segments found, checking connection map`);
               // If no lesion_segments, check if there are connections in the connection map
               const connectionOrigin = getOriginFromConnectionMap(segment.id);
+              console.log(`[EditLesionDialog] Connection map origin result:`, connectionOrigin);
+              
               if (connectionOrigin) {
+                console.log(`[EditLesionDialog] Setting origin from connection map: ${connectionOrigin}`);
                 setSelectedOriginId(connectionOrigin);
                 setTemporaryConnection({
                   source: connectionOrigin,
                   target: segment.id,
                 });
               } else {
+                console.log(`[EditLesionDialog] No connections found, setting as standalone`);
                 // No connections found, this is truly a standalone lesion
                 setSelectedOriginId(null);
                 setTemporaryConnection({ source: null, target: null });
@@ -571,7 +634,108 @@ export function EditLesionDialog({
   };
 
   const connectionMap = buildConnectionMap(Object.values(studies));
-  const trajectory = useLesionTrajectory(Object.values(studies), currentSegment?.id, connectionMap);
+  const baseTrajectory = useLesionTrajectory(Object.values(studies), currentSegment?.id, connectionMap);
+  
+  // Global cache for updated segment stats that persists across study contexts
+  const getGlobalSegmentStatsCache = () => {
+    if (!(window as any).globalSegmentStatsCache) {
+      (window as any).globalSegmentStatsCache = new Map();
+    }
+    return (window as any).globalSegmentStatsCache as Map<string, any>;
+  };
+  
+  // Get fresh segment stats from multiple sources for real-time updates
+  const getFreshSegmentStats = (segmentId: string) => {
+    // First, check the global cache for persisted updates
+    const globalCache = getGlobalSegmentStatsCache();
+    const cachedStats = globalCache.get(segmentId);
+    if (cachedStats) {
+      console.log(`[EditLesionDialog] Found cached stats for ${segmentId}:`, cachedStats);
+      return cachedStats;
+    }
+    
+    // Then, check the active segmentation for fresh stats
+    if (!activeSegmentationId) return null;
+    
+    try {
+      const { segmentationService } = servicesManager?.services || {};
+      if (!segmentationService) return null;
+      
+      const segmentation = segmentationService.getSegmentation(activeSegmentationId);
+      if (!segmentation?.segments) return null;
+      
+      // Find segment by matching cached stats ID
+      for (const [segmentIndex, segment] of Object.entries(segmentation.segments)) {
+        const segmentAny = segment as any;
+        if (segmentAny?.cachedStats?.id === segmentId && segmentAny.cachedStats) {
+          const freshStats = {
+            volume: segmentAny.cachedStats.volume,
+            diameter: segmentAny.cachedStats.diameter || segmentAny.cachedStats.maxDiameter,
+            axial_diameter: segmentAny.cachedStats.diameter || segmentAny.cachedStats.maxDiameter
+          };
+          
+          console.log(`[EditLesionDialog] Found fresh stats for ${segmentId}:`, freshStats);
+          
+          // Cache the fresh stats globally for persistence across study contexts
+          globalCache.set(segmentId, freshStats);
+          
+          return freshStats;
+        }
+      }
+    } catch (error) {
+      console.error('[EditLesionDialog] Error getting fresh segment stats:', error);
+    }
+    return null;
+  };
+  
+  // Enhance trajectory with fresh stats for real-time updates
+  const trajectory = baseTrajectory.map(studyGroup => ({
+    ...studyGroup,
+    segments: studyGroup.segments.map(segmentData => {
+      const freshStats = getFreshSegmentStats(segmentData.segment.id);
+      if (freshStats) {
+        console.log(`[EditLesionDialog] Enhancing ${segmentData.segment.label} with fresh stats`);
+        return {
+          ...segmentData,
+          segment: {
+            ...segmentData.segment,
+            volume: freshStats.volume,
+            axial_diameter: freshStats.axial_diameter
+          }
+        };
+      }
+      return segmentData;
+    })
+  }));
+  
+  // Debug trajectory data for inconsistency tracking
+  console.log(`[EditLesionDialog] Current study context:`, {
+    segmentStudy: segmentStudy?.study_id,
+    segmentDate: segmentStudy?.study_date,
+    currentSegmentId: currentSegment?.id,
+    trajectoryLength: trajectory.length
+  });
+  
+  console.log(`[EditLesionDialog] Trajectory data:`, trajectory.map(t => ({
+    study_id: t.study.study_id,
+    study_date: t.study.study_date,
+    segments: t.segments.map(s => ({
+      id: s.segment.id,
+      label: s.segment.label,
+      volume: s.segment.volume,
+      axial_diameter: s.segment.axial_diameter,
+      coronal_diameter: s.segment.coronal_diameter,
+      sagittal_diameter: s.segment.sagittal_diameter
+    }))
+  })));
+  
+  // Expand the trajectory data to see actual values
+  trajectory.forEach((t, index) => {
+    console.log(`[EditLesionDialog] Study ${index + 1} (${t.study.study_date}):`);
+    t.segments.forEach(s => {
+      console.log(`  - ${s.segment.label} (${s.segment.id}): Volume=${s.segment.volume}, Diameter=${s.segment.axial_diameter}`);
+    });
+  });
 
   const hasHistory = trajectory.length > 0;
 
@@ -878,13 +1042,11 @@ export function EditLesionDialog({
                       <div className="min-w-full divide-y divide-gray-200">
                         {/* Table header */}
                         <div className="bg-secondary-dark border-secondary-light">
-                          <div className="text-secondary-foreground grid grid-cols-6 gap-4 px-4 py-3 text-sm font-semibold">
+                          <div className="text-secondary-foreground grid grid-cols-4 gap-4 px-4 py-3 text-sm font-semibold">
                             <div>Date</div>
                             <div>Segment</div>
                             <div>Volume (mm³)</div>
-                            <div>Axial Diameter (mm)</div>
-                            <div>Coronal Diameter (mm)</div>
-                            <div>Sagittal Diameter (mm)</div>
+                            <div>Diameter (mm)</div>
                           </div>
                         </div>
 
@@ -896,7 +1058,7 @@ export function EditLesionDialog({
                               study={study}
                               segments={segments}
                               totalVolume={totalVolume}
-                              onSegmentSelect={setSelectedSegmentId}
+                              onSegmentSelect={handleSegmentSelect}
                               selectedSegmentId={selectedSegmentId}
                             />
                           ))}

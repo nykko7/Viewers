@@ -1158,6 +1158,9 @@ async function calculateRealVolumeStatistics(
               segment.cachedStats.minDiameter = obbResult.minDiameter;
               segment.cachedStats.maxDiameterSlice = obbResult.maxDiameterSlice;
               segment.cachedStats.minDiameterSlice = obbResult.minDiameterSlice;
+              // Store coordinate data for measurement creation
+              segment.cachedStats.overallMajorAxis = obbResult.overallMajorAxis;
+              segment.cachedStats.overallMinorAxis = obbResult.overallMinorAxis;
               
               // Always use OBB diameter (no spherical fallback)
               if (obbResult.maxDiameter > 0 && obbResult.maxDiameter < 1000) {
@@ -1169,6 +1172,14 @@ async function calculateRealVolumeStatistics(
               
               // Remove calculating flag
               delete (segment.cachedStats as any).isCalculating;
+              
+              // DO NOT UPDATE ZUSTAND STORE - This causes data corruption!
+              // The OBB results should only be stored in Cornerstone segmentation object
+              // to avoid contaminating the shared studies data across different study contexts.
+              console.log(`[OBB] Skipping store update to prevent data corruption - OBB result stored in Cornerstone only`);
+              
+              // Note: The EditLesionDialog should read OBB results from Cornerstone segmentation
+              // instead of from the studies data to get the correct, context-specific values.
               
               // Dispatch UI update event
               const event = new CustomEvent('segmentation-stats-updated', {

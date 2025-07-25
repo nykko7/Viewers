@@ -2,6 +2,8 @@ import { useEffect } from 'react';
 import { useSegmentationsStore } from '../../../stores/useSegmentationsStore';
 import { cache, metaData, utilities } from '@cornerstonejs/core';
 import { segmentation as cstSegmentation, Enums as cstEnums } from '@cornerstonejs/tools';
+import { getOBBWorkerManager } from '../utils/obbWorkerManager';
+import { calculateOBBDiameters } from '../utils/obbCalculation';
 
 const { SegmentationRepresentations } = cstEnums;
 
@@ -11,7 +13,7 @@ let isLoadingOpenCV = false;
 
 const loadOpenCV = async (): Promise<any> => {
   if (cv) return cv;
-  
+
   if (isLoadingOpenCV) {
     while (isLoadingOpenCV && !cv) {
       await new Promise(resolve => setTimeout(resolve, 100));
@@ -20,7 +22,7 @@ const loadOpenCV = async (): Promise<any> => {
   }
 
   isLoadingOpenCV = true;
-  
+
   try {
     // Check if OpenCV is already available globally
     if (typeof window !== 'undefined' && (window as any).cv) {
@@ -37,34 +39,34 @@ const loadOpenCV = async (): Promise<any> => {
 
     // Load OpenCV from CDN to avoid webpack polyfill issues
     console.log('[OpenCV] Loading OpenCV from CDN...');
-    
+
     // List of CDN fallbacks
     const cdnUrls = [
       'https://cdn.jsdelivr.net/npm/opencv.js@1.2.1/opencv.js',
       'https://unpkg.com/opencv.js@1.2.1/opencv.js',
-      'https://cdnjs.cloudflare.com/ajax/libs/opencv.js/4.5.5/opencv.js'
+      'https://cdnjs.cloudflare.com/ajax/libs/opencv.js/4.5.5/opencv.js',
     ];
-    
+
     const tryLoadFromCDN = async (urls: string[]): Promise<any> => {
       for (let i = 0; i < urls.length; i++) {
         const url = urls[i];
         console.log(`[OpenCV] Trying CDN ${i + 1}/${urls.length}: ${url}`);
-        
+
         try {
           const result = await new Promise<any>((resolve, reject) => {
             const script = document.createElement('script');
             script.src = url;
             script.async = true;
             script.crossOrigin = 'anonymous';
-            
+
             script.onload = () => {
               console.log(`[OpenCV] Script loaded from CDN: ${url}`);
-              
+
               // Wait for OpenCV to be initialized
               const checkOpenCV = () => {
                 if (typeof (window as any).cv !== 'undefined') {
                   cv = (window as any).cv;
-                  
+
                   // Wait for OpenCV runtime to be initialized
                   if (cv.Mat) {
                     console.log('[OpenCV] OpenCV runtime ready');
@@ -80,38 +82,36 @@ const loadOpenCV = async (): Promise<any> => {
                   setTimeout(checkOpenCV, 100);
                 }
               };
-              
+
               checkOpenCV();
             };
-            
-            script.onerror = (error) => {
+
+            script.onerror = error => {
               console.log(`[OpenCV] Failed to load from CDN: ${url}`, error);
               document.head.removeChild(script);
               reject(error);
             };
-            
+
             // Add script to document head
             document.head.appendChild(script);
           });
-          
+
           // If we get here, loading was successful
           isLoadingOpenCV = false;
           return result;
-          
         } catch (error) {
           console.log(`[OpenCV] CDN ${i + 1} failed, trying next...`);
           continue;
         }
       }
-      
+
       // All CDNs failed
       console.error('[OpenCV] All CDN sources failed to load OpenCV');
       isLoadingOpenCV = false;
       return null;
     };
-    
+
     return tryLoadFromCDN(cdnUrls);
-    
   } catch (error) {
     console.error('[OpenCV] Error loading OpenCV:', error);
     isLoadingOpenCV = false;
@@ -131,6 +131,14 @@ interface SegmentStats {
   diameter: number; // Diameter in mm
   majorAxisMm?: number;
   minorAxisMm?: number;
+  // Enhanced OBB properties
+  maxDiameter?: number; // in mm
+  minDiameter?: number; // in mm
+  maxDiameterSlice?: number;
+  minDiameterSlice?: number;
+  majorAxis?: [{ x: number; y: number }, { x: number; y: number }];
+  minorAxis?: [{ x: number; y: number }, { x: number; y: number }];
+  sliceResults?: any[];
 }
 
 type SegmentStatsMap = Record<string, SegmentStats>;
@@ -172,7 +180,7 @@ export function useSegmentationDataSync({
       segmentationService.EVENTS.SEGMENTATION_DATA_MODIFIED,
       (evt: any) => {
         console.log('[useSegmentationDataSync] SEGMENTATION_DATA_MODIFIED event received:', evt);
-        
+
         // Debounce updates (reduced timeout for more responsive UI)
         clearTimeout(window.segmentationUpdateTimeout);
         window.segmentationUpdateTimeout = setTimeout(() => {
@@ -180,7 +188,12 @@ export function useSegmentationDataSync({
           const currentState = useSegmentationsStore.getState();
           const currentStudies = currentState.getStudies();
           const currentUpdateSegment = currentState.updateSegment;
-          handleSegmentationDataModified(evt, currentStudies, currentUpdateSegment, segmentationService);
+          handleSegmentationDataModified(
+            evt,
+            currentStudies,
+            currentUpdateSegment,
+            segmentationService
+          );
         }, 50); // Reduced from 500ms to 50ms for immediate responsiveness
       }
     );
@@ -215,7 +228,10 @@ async function handleSegmentationDataModified(
   // Get the segmentation directly from the segmentation service (like in the original code)
   const segmentation = segmentationService.getSegmentation(segmentationId);
   if (!segmentation) {
-    console.log('[handleSegmentationDataModified] Segmentation not found in service:', segmentationId);
+    console.log(
+      '[handleSegmentationDataModified] Segmentation not found in service:',
+      segmentationId
+    );
     return;
   }
 
@@ -227,7 +243,10 @@ async function handleSegmentationDataModified(
     (segment: any) => segment.active
   );
   activeSegmentIndex = activeSegment?.segmentIndex;
-  console.log('[handleSegmentationDataModified] Active segment index from segmentation data:', activeSegmentIndex);
+  console.log(
+    '[handleSegmentationDataModified] Active segment index from segmentation data:',
+    activeSegmentIndex
+  );
 
   await calculateUpdatedStatistics(
     segmentationId,
@@ -252,8 +271,9 @@ function getVolumesFromSegmentation(segmentationId: string) {
     console.log('[getVolumesFromSegmentation] Found segmentation:', segmentation);
 
     // Get the labelmap representation
-    const labelmapRepresentation = segmentation.representationData?.[SegmentationRepresentations.Labelmap];
-    
+    const labelmapRepresentation =
+      segmentation.representationData?.[SegmentationRepresentations.Labelmap];
+
     if (!labelmapRepresentation) {
       console.log('[getVolumesFromSegmentation] No labelmap representation found');
       return { labelmapVolume: null, referencedVolume: null };
@@ -262,11 +282,19 @@ function getVolumesFromSegmentation(segmentationId: string) {
     console.log('[getVolumesFromSegmentation] Labelmap representation:', labelmapRepresentation);
 
     // Get the volume ID from the labelmap - check for different possible properties
-    const volumeId = (labelmapRepresentation as any)?.volumeId || (labelmapRepresentation as any)?.imageIds;
+    const volumeId =
+      (labelmapRepresentation as any)?.volumeId || (labelmapRepresentation as any)?.imageIds;
     const _referencedVolumeId = (labelmapRepresentation as any)?.referencedVolumeId;
     const actualVolumeId = volumeId || segmentationId;
 
-    console.log('[getVolumesFromSegmentation] volumeId:', volumeId, 'referencedVolumeId:', _referencedVolumeId, 'actualVolumeId:', actualVolumeId);
+    console.log(
+      '[getVolumesFromSegmentation] volumeId:',
+      volumeId,
+      'referencedVolumeId:',
+      _referencedVolumeId,
+      'actualVolumeId:',
+      actualVolumeId
+    );
 
     // Debug: Check what volumes are available in the cache
     const allVolumes = cache.getVolumes();
@@ -279,15 +307,24 @@ function getVolumesFromSegmentation(segmentationId: string) {
         labelmapVolume = cache.getVolume(actualVolumeId);
         console.log('[getVolumesFromSegmentation] Got labelmap volume from cache:', labelmapVolume);
       } catch (error) {
-        console.log('[getVolumesFromSegmentation] Failed to get labelmap volume from cache:', error);
+        console.log(
+          '[getVolumesFromSegmentation] Failed to get labelmap volume from cache:',
+          error
+        );
 
         // Try using the segmentationId as volume ID if the first attempt failed
         if (actualVolumeId !== segmentationId) {
           try {
             labelmapVolume = cache.getVolume(segmentationId);
-            console.log('[getVolumesFromSegmentation] Got labelmap volume using segmentationId:', labelmapVolume);
+            console.log(
+              '[getVolumesFromSegmentation] Got labelmap volume using segmentationId:',
+              labelmapVolume
+            );
           } catch (error2) {
-            console.log('[getVolumesFromSegmentation] Failed to get volume using segmentationId:', error2);
+            console.log(
+              '[getVolumesFromSegmentation] Failed to get volume using segmentationId:',
+              error2
+            );
           }
         }
 
@@ -300,9 +337,15 @@ function getVolumesFromSegmentation(segmentationId: string) {
         if (possibleVolumeIds.length > 0) {
           try {
             labelmapVolume = cache.getVolume(possibleVolumeIds[0]);
-            console.log('[getVolumesFromSegmentation] Got labelmap volume using possible ID:', labelmapVolume);
+            console.log(
+              '[getVolumesFromSegmentation] Got labelmap volume using possible ID:',
+              labelmapVolume
+            );
           } catch (error3) {
-            console.log('[getVolumesFromSegmentation] Failed to get volume using possible ID:', error3);
+            console.log(
+              '[getVolumesFromSegmentation] Failed to get volume using possible ID:',
+              error3
+            );
           }
         }
       }
@@ -313,9 +356,15 @@ function getVolumesFromSegmentation(segmentationId: string) {
     if (_referencedVolumeId) {
       try {
         referencedVolume = cache.getVolume(_referencedVolumeId);
-        console.log('[getVolumesFromSegmentation] Got referenced volume from cache:', referencedVolume);
+        console.log(
+          '[getVolumesFromSegmentation] Got referenced volume from cache:',
+          referencedVolume
+        );
       } catch (error) {
-        console.log('[getVolumesFromSegmentation] Failed to get referenced volume from cache:', error);
+        console.log(
+          '[getVolumesFromSegmentation] Failed to get referenced volume from cache:',
+          error
+        );
       }
     }
 
@@ -340,12 +389,16 @@ async function calculateUpdatedStatistics(
     const { labelmapVolume } = getVolumesFromSegmentation(segId);
 
     if (!labelmapVolume) {
-      console.log('[calculateUpdatedStatistics] No labelmap volume found, trying alternative method...');
-      
+      console.log(
+        '[calculateUpdatedStatistics] No labelmap volume found, trying alternative method...'
+      );
+
       // Use the labelmap data from the segmentation representation
       const labelmapData = segmentation.representationData?.[SegmentationRepresentations.Labelmap];
       if (labelmapData?.imageIds && labelmapData.imageIds.length > 0) {
-        console.log('[calculateUpdatedStatistics] Found imageIds, attempting to calculate statistics...');
+        console.log(
+          '[calculateUpdatedStatistics] Found imageIds, attempting to calculate statistics...'
+        );
         return await calculateStatsFromImageIds(
           segId,
           segmentation,
@@ -356,7 +409,10 @@ async function calculateUpdatedStatistics(
         );
       }
 
-      console.log('[calculateUpdatedStatistics] No labelmap volume or imageIds found for segmentation:', segId);
+      console.log(
+        '[calculateUpdatedStatistics] No labelmap volume or imageIds found for segmentation:',
+        segId
+      );
       return;
     }
 
@@ -387,7 +443,14 @@ async function processVolume(
   // Try voxelManager approach first (newer API)
   if (segVoxelManager) {
     console.log('[processVolume] Using voxelManager approach...');
-    return await processWithVoxelManager(segVoxelManager, imageData, spacing, segId, segmentation, updateSegment);
+    return await processWithVoxelManager(
+      segVoxelManager,
+      imageData,
+      spacing,
+      segId,
+      segmentation,
+      updateSegment
+    );
   }
 
   // Fall back to scalarData approach (older API)
@@ -426,13 +489,24 @@ async function processWithVoxelManager(
   try {
     const voxelData = segVoxelManager.getCompleteScalarDataArray?.();
     const dimensions = imageData?.getDimensions?.();
-    
+
     if (voxelData && dimensions && Object.keys(segmentVoxelCounts).length > 0) {
       console.log('🔍 [STATS UPDATE] Using enhanced OBB calculation...');
-      return await calculateStatsWithOBB(segmentVoxelCounts, spacing, segId, segmentation, updateSegment, voxelData, dimensions);
+      return await calculateStatsWithOBB(
+        segmentVoxelCounts,
+        spacing,
+        segId,
+        segmentation,
+        updateSegment,
+        voxelData,
+        dimensions
+      );
     }
   } catch (error) {
-    console.log('[processWithVoxelManager] Could not use OBB calculation, using standard method:', error);
+    console.log(
+      '[processWithVoxelManager] Could not use OBB calculation, using standard method:',
+      error
+    );
   }
 
   return calculateBasicStats(segmentVoxelCounts, spacing, segId, segmentation, updateSegment);
@@ -476,7 +550,7 @@ function calculateBasicStats(
     const volumeCm3 = volumeMm3 / 1000;
 
     // Calculate spherical diameter (assuming spherical lesion)
-    const radius = Math.pow((3 * volumeMm3) / (4 * Math.PI), 1/3);
+    const radius = Math.pow((3 * volumeMm3) / (4 * Math.PI), 1 / 3);
     const diameter = 2 * radius;
 
     const segment = segmentation.segments[segmentIndex];
@@ -531,7 +605,7 @@ async function calculateStatsWithOBB(
     const volumeCm3 = volumeMm3 / 1000;
 
     // Calculate spherical diameter as fallback
-    const radius = Math.pow((3 * volumeMm3) / (4 * Math.PI), 1/3);
+    const radius = Math.pow((3 * volumeMm3) / (4 * Math.PI), 1 / 3);
     const sphericalDiameter = 2 * radius;
 
     let majorAxisMm = sphericalDiameter;
@@ -541,14 +615,25 @@ async function calculateStatsWithOBB(
     if (useOpenCV && voxelData && dimensions) {
       try {
         // Use the new OBB-based diameter calculation with OpenCV
-        const obbResult = await computeDiametersWithOpenCV(voxelData, segmentIndex, dimensions, spacing, openCV);
+        const obbResult = await computeDiametersWithOpenCV(
+          voxelData,
+          segmentIndex,
+          dimensions,
+          spacing,
+          openCV
+        );
         if (obbResult && obbResult.majorAxisMm > 0) {
           majorAxisMm = obbResult.majorAxisMm;
           minorAxisMm = obbResult.minorAxisMm;
-          console.log(`[calculateStatsWithOBB] OBB calculation successful for segment ${segmentIndex}: major=${majorAxisMm.toFixed(2)}mm, minor=${minorAxisMm.toFixed(2)}mm, slice=${obbResult.majorAxisSlice}`);
+          console.log(
+            `[calculateStatsWithOBB] OBB calculation successful for segment ${segmentIndex}: major=${majorAxisMm.toFixed(2)}mm, minor=${minorAxisMm.toFixed(2)}mm, slice=${obbResult.majorAxisSlice}`
+          );
         }
       } catch (error) {
-        console.log(`[calculateStatsWithOBB] OBB calculation failed for segment ${segmentIndex}:`, error);
+        console.log(
+          `[calculateStatsWithOBB] OBB calculation failed for segment ${segmentIndex}:`,
+          error
+        );
       }
     }
 
@@ -573,7 +658,9 @@ async function calculateStatsWithOBB(
         },
       };
 
-      console.log(`[calculateStatsWithOBB] Updated segment ${segmentIndex} with ${useOpenCV ? 'OBB' : 'spherical'} diameters`);
+      console.log(
+        `[calculateStatsWithOBB] Updated segment ${segmentIndex} with ${useOpenCV ? 'OBB' : 'spherical'} diameters`
+      );
     }
   }
 
@@ -611,7 +698,9 @@ function extractLesionCoordinates(
     console.error('[extractLesionCoordinates] Error extracting coordinates:', error);
   }
 
-  console.log(`[extractLesionCoordinates] Extracted ${coords.length} coordinates for segment ${segmentIndex}`);
+  console.log(
+    `[extractLesionCoordinates] Extracted ${coords.length} coordinates for segment ${segmentIndex}`
+  );
   return coords;
 }
 
@@ -643,7 +732,7 @@ async function computeDiametersWithOpenCV(
       // Create binary mask for current slice
       const sliceMask = new Uint8Array(width * height);
       let hasSegmentPixels = false;
-      
+
       for (let y = 0; y < height; y++) {
         for (let x = 0; x < width; x++) {
           const index = z * width * height + y * width + x;
@@ -653,7 +742,7 @@ async function computeDiametersWithOpenCV(
           }
         }
       }
-      
+
       if (!hasSegmentPixels) {
         continue; // Skip slices without segment pixels
       }
@@ -662,22 +751,22 @@ async function computeDiametersWithOpenCV(
         // Create OpenCV Mat from slice mask
         const mat = new cv.Mat(height, width, cv.CV_8UC1);
         mat.data.set(sliceMask);
-        
+
         // Find contours
         const contours = new cv.MatVector();
         const hierarchy = new cv.Mat();
         cv.findContours(mat, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
-        
+
         if (contours.size() === 0) {
           mat.delete();
           contours.delete();
           hierarchy.delete();
           continue;
         }
-        
+
         let majorLength = 0;
         let minorLength = 0;
-        
+
         // Apply 'largest-area' strategy
         if (contours.size() === 1) {
           // Single contour case
@@ -685,14 +774,14 @@ async function computeDiametersWithOpenCV(
           const rotatedRect = cv.minAreaRect(contour);
           const width_px = rotatedRect.size.width;
           const height_px = rotatedRect.size.height;
-          
+
           majorLength = Math.max(width_px, height_px) * spacing[1]; // Use row spacing
           minorLength = Math.min(width_px, height_px) * spacing[1];
         } else {
           // Multiple contours - find largest by area
           let largestContour = null;
           let maxArea = 0;
-          
+
           for (let i = 0; i < contours.size(); i++) {
             const contour = contours.get(i);
             const area = cv.contourArea(contour);
@@ -701,28 +790,29 @@ async function computeDiametersWithOpenCV(
               largestContour = contour;
             }
           }
-          
+
           if (largestContour) {
             const rotatedRect = cv.minAreaRect(largestContour);
             const width_px = rotatedRect.size.width;
             const height_px = rotatedRect.size.height;
-            
+
             majorLength = Math.max(width_px, height_px) * spacing[1];
             minorLength = Math.min(width_px, height_px) * spacing[1];
           }
         }
-        
+
         if (majorLength > 0) {
           groupedMaxDiameters[z.toString()] = majorLength;
           groupedMinDiameters[z.toString()] = minorLength;
-          console.log(`[computeDiametersWithOpenCV] Slice ${z}: major=${majorLength.toFixed(2)}mm, minor=${minorLength.toFixed(2)}mm`);
+          console.log(
+            `[computeDiametersWithOpenCV] Slice ${z}: major=${majorLength.toFixed(2)}mm, minor=${minorLength.toFixed(2)}mm`
+          );
         }
-        
+
         // Clean up OpenCV objects
         mat.delete();
         contours.delete();
         hierarchy.delete();
-        
       } catch (error) {
         console.log(`[computeDiametersWithOpenCV] Error processing slice ${z}:`, error);
       }
@@ -733,23 +823,24 @@ async function computeDiametersWithOpenCV(
       console.log('[computeDiametersWithOpenCV] No valid measurements found');
       return { majorAxisMm: 0, minorAxisMm: 0, majorAxisSlice: -1 };
     }
-    
-    const majorAxisSliceIdx = Object.keys(groupedMaxDiameters).reduce((a, b) => 
+
+    const majorAxisSliceIdx = Object.keys(groupedMaxDiameters).reduce((a, b) =>
       groupedMaxDiameters[a] > groupedMaxDiameters[b] ? a : b
     );
-    
+
     const majorAxisMm = groupedMaxDiameters[majorAxisSliceIdx];
     const minorAxisMm = groupedMinDiameters[majorAxisSliceIdx];
     const majorAxisSlice = parseInt(majorAxisSliceIdx);
 
-    console.log(`[computeDiametersWithOpenCV] Final result - Slice: ${majorAxisSlice}, Major: ${majorAxisMm.toFixed(2)}mm, Minor: ${minorAxisMm.toFixed(2)}mm`);
-    
+    console.log(
+      `[computeDiametersWithOpenCV] Final result - Slice: ${majorAxisSlice}, Major: ${majorAxisMm.toFixed(2)}mm, Minor: ${minorAxisMm.toFixed(2)}mm`
+    );
+
     return {
       majorAxisMm,
       minorAxisMm,
-      majorAxisSlice
+      majorAxisSlice,
     };
-    
   } catch (error) {
     console.error('[computeDiametersWithOpenCV] Error in OBB diameter calculation:', error);
     return { majorAxisMm: 0, minorAxisMm: 0, majorAxisSlice: -1 };
@@ -766,16 +857,16 @@ async function calculateStatsFromImageIds(
   segmentationService?: any
 ) {
   console.log('[calculateStatsFromImageIds] Calculating statistics from imageIds...');
-  
+
   try {
     const realStats = await calculateRealVolumeStatistics(segId, labelmapData);
-    
+
     if (realStats && Object.keys(realStats).length > 0) {
       // Update segments with real statistics
       Object.entries(realStats).forEach(([segmentIndexStr, stats]) => {
         const segmentIndex = parseInt(segmentIndexStr);
         const segment = segmentation.segments[segmentIndex];
-        
+
         if (segment) {
           // Transform internal SegmentStats format to SegmentStatsType format for UI
           const transformedStats = {
@@ -800,38 +891,57 @@ async function calculateStatsFromImageIds(
 
           // Update the segment directly in the segmentation object that the UI reads from
           segment.cachedStats = newCachedStats;
-          
+
           // CRITICAL: Call updateSegment to trigger store update and UI re-render
           if (updateSegment && typeof updateSegment === 'function') {
             updateSegment(updatedSegment);
-            console.log(`[calculateStatsFromImageIds] Called updateSegment for segment ${segmentIndex} to trigger UI update`);
+            console.log(
+              `[calculateStatsFromImageIds] Called updateSegment for segment ${segmentIndex} to trigger UI update`
+            );
           } else {
-            console.warn(`[calculateStatsFromImageIds] updateSegment function not available for segment ${segmentIndex}`);
+            console.warn(
+              `[calculateStatsFromImageIds] updateSegment function not available for segment ${segmentIndex}`
+            );
           }
-          
 
-          
-          console.log(`[calculateStatsFromImageIds] Updated segment ${segmentIndex} with volume: ${newCachedStats.volume} mm³`);
-          
-          console.log(`[calculateStatsFromImageIds] Updated segment ${segmentIndex} cachedStats:`, newCachedStats);
+          console.log(
+            `[calculateStatsFromImageIds] Updated segment ${segmentIndex} with volume: ${newCachedStats.volume} mm³`
+          );
+
+          console.log(
+            `[calculateStatsFromImageIds] Updated segment ${segmentIndex} cachedStats:`,
+            newCachedStats
+          );
         }
       });
-      
+
       // CRITICAL: Update the segmentation through the service to trigger UI refresh
       // This will automatically trigger the SEGMENTATION_DATA_MODIFIED event that useActiveViewportSegmentationRepresentations listens to
-      if (segmentationService && typeof segmentationService.addOrUpdateSegmentation === 'function') {
+      if (
+        segmentationService &&
+        typeof segmentationService.addOrUpdateSegmentation === 'function'
+      ) {
         try {
           // Update the segmentation through the service once after all segments are updated
           segmentationService.addOrUpdateSegmentation(segmentation);
-          console.log(`[calculateStatsFromImageIds] Updated segmentation through service to trigger UI refresh`);
+          console.log(
+            `[calculateStatsFromImageIds] Updated segmentation through service to trigger UI refresh`
+          );
         } catch (error) {
-          console.warn(`[calculateStatsFromImageIds] Could not update segmentation through service:`, error);
+          console.warn(
+            `[calculateStatsFromImageIds] Could not update segmentation through service:`,
+            error
+          );
         }
       } else {
-        console.warn(`[calculateStatsFromImageIds] segmentationService.addOrUpdateSegmentation not available`);
+        console.warn(
+          `[calculateStatsFromImageIds] segmentationService.addOrUpdateSegmentation not available`
+        );
       }
-      
-      console.log('[calculateStatsFromImageIds] Segmentation data updated, forced viewport refresh');
+
+      console.log(
+        '[calculateStatsFromImageIds] Segmentation data updated, forced viewport refresh'
+      );
 
       console.log('[calculateStatsFromImageIds] Updated segments with real statistics');
     }
@@ -855,7 +965,8 @@ async function calculateRealVolumeStatistics(
       console.log('[calculateRealVolumeStatistics] Found segmentation data:', segmentationData);
 
       // Try to process the volume data if available
-      const labelmapRepresentation = segmentationData.representationData[SegmentationRepresentations.Labelmap];
+      const labelmapRepresentation =
+        segmentationData.representationData[SegmentationRepresentations.Labelmap];
       if (labelmapRepresentation && (labelmapRepresentation as any).volumeId) {
         try {
           const volume = cache.getVolume((labelmapRepresentation as any).volumeId);
@@ -877,7 +988,11 @@ async function calculateRealVolumeStatistics(
       return null;
     }
 
-    console.log('[calculateRealVolumeStatistics] Found imageIds:', imageIds.length, '- using image-based calculation');
+    console.log(
+      '[calculateRealVolumeStatistics] Found imageIds:',
+      imageIds.length,
+      '- using image-based calculation'
+    );
 
     // Use proper Cornerstone3D approach to get spacing
     let pixelSpacing: number[] = [1, 1]; // default
@@ -888,7 +1003,10 @@ async function calculateRealVolumeStatistics(
       const { zSpacing } = utilities.sortImageIdsAndGetSpacing(imageIds);
       if (zSpacing && zSpacing > 0) {
         sliceThickness = Math.abs(zSpacing);
-        console.log('[calculateRealVolumeStatistics] Got slice spacing from utility:', sliceThickness);
+        console.log(
+          '[calculateRealVolumeStatistics] Got slice spacing from utility:',
+          sliceThickness
+        );
       }
 
       // Get pixel spacing from imagePlaneModule
@@ -899,7 +1017,10 @@ async function calculateRealVolumeStatistics(
         console.log('[calculateRealVolumeStatistics] Got pixel spacing:', pixelSpacing);
       }
     } catch (error) {
-      console.log('[calculateRealVolumeStatistics] Could not get spacing info, using defaults:', error);
+      console.log(
+        '[calculateRealVolumeStatistics] Could not get spacing info, using defaults:',
+        error
+      );
     }
 
     console.log('[calculateRealVolumeStatistics] Final spacing values:', {
@@ -913,15 +1034,18 @@ async function calculateRealVolumeStatistics(
     // Count voxels for each segment by processing each image slice
     const segmentStats: SegmentStatsMap = {};
 
-    // Process each image slice
+    // Process each image slice to count voxels
     for (let i = 0; i < imageIds.length; i++) {
       const imageId = imageIds[i];
-      
+
       try {
         const image = cache.getImage(imageId);
 
         if (!image || !image.getPixelData) {
-          console.log('[calculateRealVolumeStatistics] Skipping image without pixel data:', imageId);
+          console.log(
+            '[calculateRealVolumeStatistics] Skipping image without pixel data:',
+            imageId
+          );
           continue;
         }
 
@@ -951,7 +1075,7 @@ async function calculateRealVolumeStatistics(
 
     // Calculate final statistics for each segment
     const finalStats: SegmentStatsMap = {};
-    
+
     for (const segmentValue of Object.keys(segmentStats)) {
       const stats = segmentStats[segmentValue];
       const segmentIndex = parseInt(segmentValue);
@@ -959,52 +1083,167 @@ async function calculateRealVolumeStatistics(
       // Calculate volume in mm³
       stats.volume = stats.voxelCount * voxelVolumeMm3;
 
-      // Calculate equivalent sphere diameter as fallback (in mm)
-      const volumeCm3 = stats.volume / 1000;
-      const radius = Math.pow((3 * volumeCm3) / (4 * Math.PI), 1 / 3);
-      const sphericalDiameter = 2 * radius * 10; // Convert cm to mm
-      stats.diameter = sphericalDiameter;
-
-      // OBB calculation temporarily disabled to prevent UI freezing
-      // TODO: Implement in Web Worker for non-blocking execution
-      console.log(`[calculateRealVolumeStatistics] OBB calculation disabled to prevent freezing - using spherical diameter for segment ${segmentIndex}`);
+      // Don't calculate spherical diameter - only use OBB calculation
+      // Keep existing diameter if it exists and is reasonable, otherwise set to null
+      if (!stats.diameter || stats.diameter < 1 || stats.diameter > 1000) {
+        stats.diameter = null; // Will be set by OBB calculation
+      }
       
-      // For now, we'll use spherical diameter to keep the app responsive
-      // The OBB calculation infrastructure is ready for Web Worker implementation
+      // Mark as calculating for loading indicator
+      (stats as any).isCalculating = true;
+      console.log(`[DEBUG] Segment ${segmentIndex} should show loading indicator (isCalculating: true)`);
+      console.log(`[DEBUG] Segment ${segmentIndex} current diameter: ${stats.diameter?.toFixed(2) || 'null'}mm (waiting for OBB calculation)`);
+      
+      // Start async OBB calculation for enhanced diameter measurement
+      setTimeout(async () => {
+        try {
+          console.log(`[OBB] Starting OBB calculation for segment ${segmentIndex}`);
+          
+          // Get image dimensions
+          const firstImage = cache.getImage(imageIds[0]);
+          if (!firstImage) {
+            throw new Error('Could not get first image for dimensions');
+          }
+          
+          const width = firstImage.width || firstImage.columns || 0;
+          const height = firstImage.height || firstImage.rows || 0;
+          const depth = imageIds.length;
+          
+          if (width === 0 || height === 0) {
+            throw new Error('Invalid image dimensions');
+          }
+          
+          // Reconstruct 3D volume data
+          const segmentVoxelData = new Uint8Array(width * height * depth);
+          
+          // Fill with segment data from each slice
+          for (let z = 0; z < imageIds.length; z++) {
+            try {
+              const image = cache.getImage(imageIds[z]);
+              if (image && image.getPixelData) {
+                const pixelData = image.getPixelData();
+                const sliceOffset = z * width * height;
+                
+                for (let i = 0; i < pixelData.length && i < width * height; i++) {
+                  segmentVoxelData[sliceOffset + i] = pixelData[i];
+                }
+              }
+              
+              // Yield every 20 slices to prevent blocking
+              if (z % 20 === 0) {
+                await new Promise(resolve => setTimeout(resolve, 0));
+              }
+            } catch (error) {
+              console.warn(`[OBB] Error processing slice ${z}:`, error);
+            }
+          }
+          
+          console.log(`[OBB] Reconstructed volume for segment ${segmentIndex}: ${width}x${height}x${depth}`);
+          
+          // Calculate OBB diameters
+          const obbResult = calculateOBBDiameters(
+            segmentVoxelData,
+            segmentIndex,
+            [width, height, depth],
+            [pixelSpacing[0], pixelSpacing[1], sliceThickness]
+          );
+          
+          // Update segment with OBB results
+          const updatedSegmentation = cstSegmentation.state.getSegmentation(segId);
+          if (updatedSegmentation && updatedSegmentation.segments[segmentIndex]) {
+            const segment = updatedSegmentation.segments[segmentIndex];
+            if (segment.cachedStats) {
+              // Store OBB results
+              segment.cachedStats.maxDiameter = obbResult.maxDiameter;
+              segment.cachedStats.minDiameter = obbResult.minDiameter;
+              segment.cachedStats.maxDiameterSlice = obbResult.maxDiameterSlice;
+              segment.cachedStats.minDiameterSlice = obbResult.minDiameterSlice;
+              
+              // Always use OBB diameter (no spherical fallback)
+              if (obbResult.maxDiameter > 0 && obbResult.maxDiameter < 1000) {
+                segment.cachedStats.diameter = obbResult.maxDiameter;
+                console.log(`[OBB] Updated segment ${segmentIndex} diameter to OBB: ${obbResult.maxDiameter.toFixed(2)}mm`);
+              } else {
+                console.log(`[OBB] Invalid OBB diameter for segment ${segmentIndex}: ${obbResult.maxDiameter.toFixed(2)}mm - keeping existing value`);
+              }
+              
+              // Remove calculating flag
+              delete (segment.cachedStats as any).isCalculating;
+              
+              // Dispatch UI update event
+              const event = new CustomEvent('segmentation-stats-updated', {
+                detail: { segmentationId: segId, segmentIndex, stats: segment.cachedStats }
+              });
+              window.dispatchEvent(event);
+              console.log(`[OBB] Dispatched UI update for segment ${segmentIndex}`);
+            }
+          }
+          
+        } catch (error) {
+          console.error(`[OBB] Error in OBB calculation for segment ${segmentIndex}:`, error);
+          
+          // Remove calculating flag and keep spherical diameter
+          const updatedSegmentation = cstSegmentation.state.getSegmentation(segId);
+          if (updatedSegmentation && updatedSegmentation.segments[segmentIndex]) {
+            const segment = updatedSegmentation.segments[segmentIndex];
+            if (segment.cachedStats) {
+              delete (segment.cachedStats as any).isCalculating;
+              
+              // Dispatch UI update event even on error
+              const event = new CustomEvent('segmentation-stats-updated', {
+                detail: { segmentationId: segId, segmentIndex, stats: segment.cachedStats }
+              });
+              window.dispatchEvent(event);
+            }
+          }
+        }
+      }, 100); // Small delay to allow UI to show loading state
 
       console.log(`[calculateRealVolumeStatistics] Segment ${segmentValue} final statistics:`, {
         voxelCount: stats.voxelCount,
         volume: stats.volume,
         diameter: stats.diameter,
-        majorAxisMm: (stats as any).majorAxisMm,
-        minorAxisMm: (stats as any).minorAxisMm,
-        majorAxisSlice: (stats as any).majorAxisSlice,
+        isCalculating: (stats as any).isCalculating,
+        segmentIndex: segmentIndex,
       });
       
+      // Debug: Log which segment should show loading indicator
+      if ((stats as any).isCalculating) {
+        console.log(`[DEBUG] Segment ${segmentIndex} should show loading indicator (isCalculating: true)`);
+      }
+
       finalStats[segmentValue] = stats;
     }
 
     console.log('[calculateRealVolumeStatistics] Final segment statistics:', finalStats);
-    
-    console.log('[calculateRealVolumeStatistics] Completed image-based calculation with OBB integration');
+
+    console.log(
+      '[calculateRealVolumeStatistics] Completed image-based calculation'
+    );
     return finalStats;
   } catch (error) {
-    console.error('[calculateRealVolumeStatistics] Error calculating real volume statistics:', error);
+    console.error(
+      '[calculateRealVolumeStatistics] Error calculating real volume statistics:',
+      error
+    );
     return null;
   }
 }
 
 // Calculate statistics from volume data (when available)
-async function calculateStatsFromVolume(volume: any, _segId: string): Promise<SegmentStatsMap | null> {
+async function calculateStatsFromVolume(
+  volume: any,
+  _segId: string
+): Promise<SegmentStatsMap | null> {
   console.log('[calculateStatsFromVolume] Calculating statistics from volume data');
-  
+
   try {
     const stats: SegmentStatsMap = {};
-    
+
     // This would use the volume processing logic similar to processVolume
     // For now, return empty stats as this is a fallback case
     console.log('[calculateStatsFromVolume] Volume-based calculation not fully implemented');
-    
+
     return stats;
   } catch (error) {
     console.error('[calculateStatsFromVolume] Error calculating volume statistics:', error);

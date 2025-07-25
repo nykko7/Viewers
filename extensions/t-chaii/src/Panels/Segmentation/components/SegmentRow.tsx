@@ -67,7 +67,13 @@ export function SegmentRow({
         onDelete={() => onDelete(segmentationId, segmentIndex)}
       />
 
-      <SegmentStats stats={cachedStats} />
+      <SegmentStats
+        stats={cachedStats}
+        showChangeValues={false}
+        isCalculating={(cachedStats as any)?.isCalculating || false}
+        segmentationId={segmentationId}
+        segmentIndex={segmentIndex}
+      />
 
       <Button
         variant="outline"

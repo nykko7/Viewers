@@ -1,14 +1,164 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { affectedOrgansLabels, SegmentStatsType } from '../../../types';
 import { formatValue } from '../../../utils/formatValue';
+import { getRenderingEngine } from '@cornerstonejs/core';
+import { ToolGroupManager } from '@cornerstonejs/tools';
 
 type SegmentStatsProps = {
-  stats: SegmentStatsType;
+  stats: SegmentStatsType & {
+    maxDiameterSlice?: number;
+    minDiameterSlice?: number;
+    isCalculating?: boolean;
+  };
   showChangeValues?: boolean;
+  isCalculating?: boolean;
+  segmentationId?: string;
+  segmentIndex?: number;
 };
 
-export function SegmentStats({ stats, showChangeValues = true }: SegmentStatsProps) {
-  const segmentAdditionalStats = {
+// Pulse loading indicator component
+const PulseIndicator = () => (
+  <span className="ml-2 inline-flex h-2 w-2">
+    <span className="absolute inline-flex h-2 w-2 animate-ping rounded-full bg-blue-400 opacity-75"></span>
+    <span className="relative inline-flex h-2 w-2 rounded-full bg-blue-500"></span>
+  </span>
+);
+
+export function SegmentStats({
+  stats,
+  showChangeValues = true,
+  isCalculating = false,
+  segmentationId,
+  segmentIndex,
+}: SegmentStatsProps) {
+  const [forceUpdate, setForceUpdate] = useState(0);
+  const [isCurrentlyCalculating, setIsCurrentlyCalculating] = useState(isCalculating);
+
+  // Navigation function to go to specific slice
+  const navigateToSlice = (sliceIndex: number) => {
+    try {
+      console.log(`[SegmentStats] Attempting to navigate to slice ${sliceIndex + 1}`);
+
+      // Try to find any available rendering engine
+      console.log('[SegmentStats] Searching for rendering engines...');
+
+      // Try common rendering engine names
+      const engineNames = ['OHIFCornerstoneRenderingEngine', 'myRenderingEngine', 'default'];
+      let renderingEngine = null;
+
+      for (const engineName of engineNames) {
+        try {
+          renderingEngine = getRenderingEngine(engineName);
+          if (renderingEngine) {
+            console.log(`[SegmentStats] Found rendering engine: ${engineName}`);
+            break;
+          }
+        } catch (e) {
+          // Continue trying
+        }
+      }
+
+      if (!renderingEngine) {
+        console.error('[SegmentStats] No rendering engine found, trying custom event approach');
+        // Fallback to custom event
+        const event = new CustomEvent('navigate-to-slice', {
+          detail: { sliceIndex },
+        });
+        window.dispatchEvent(event);
+        return;
+      }
+
+      // Try common viewport names
+      const viewportNames = ['CT_AXIAL', 'default', 'viewport-1', 'viewport1'];
+      let viewport = null;
+
+      for (const viewportName of viewportNames) {
+        try {
+          viewport = renderingEngine.getViewport(viewportName);
+          if (viewport) {
+            console.log(`[SegmentStats] Found viewport: ${viewportName}`);
+            break;
+          }
+        } catch (e) {
+          // Continue trying
+        }
+      }
+
+      if (!viewport) {
+        console.error('[SegmentStats] No viewport found');
+        console.log('[SegmentStats] Available viewports:', renderingEngine.getViewports?.());
+        return;
+      }
+
+      // Get current image index and calculate difference
+      const currentImageIndex = viewport.getCurrentImageIdIndex();
+      const targetImageIndex = sliceIndex;
+      const scrollDelta = targetImageIndex - currentImageIndex;
+
+      console.log(
+        `[SegmentStats] Current slice: ${currentImageIndex}, Target: ${targetImageIndex}, Delta: ${scrollDelta}`
+      );
+
+      // Use the scroll method to navigate (cast to any to avoid TypeScript issues)
+      const viewportAny = viewport as any;
+      if (typeof viewportAny.scroll === 'function') {
+        viewportAny.scroll(scrollDelta);
+        console.log(`[SegmentStats] Successfully navigated to slice ${sliceIndex + 1}`);
+      } else if (typeof viewportAny.setImageIdIndex === 'function') {
+        // Alternative method: set image index directly
+        viewportAny.setImageIdIndex(targetImageIndex);
+        console.log(
+          `[SegmentStats] Successfully navigated to slice ${sliceIndex + 1} via setImageIdIndex`
+        );
+      } else {
+        console.error('[SegmentStats] No navigation method available on viewport');
+        console.log(
+          '[SegmentStats] Available viewport methods:',
+          Object.getOwnPropertyNames(viewport)
+        );
+      }
+    } catch (error) {
+      console.error('[SegmentStats] Error navigating to slice:', error);
+    }
+  };
+
+  // Listen for async OBB calculation completion to force re-render
+  useEffect(() => {
+    const handleStatsUpdate = (event: CustomEvent) => {
+      const { segmentationId: eventSegId, segmentIndex: eventSegIndex } = event.detail;
+
+      // Only update if this is for the current segment
+      if (eventSegId === segmentationId && eventSegIndex === segmentIndex) {
+        setForceUpdate(prev => prev + 1);
+        setIsCurrentlyCalculating(false);
+        console.log(
+          `[SegmentStats] Received stats update for segment ${segmentIndex}, forcing re-render`
+        );
+      }
+    };
+
+    window.addEventListener('segmentation-stats-updated', handleStatsUpdate as EventListener);
+
+    return () => {
+      window.removeEventListener('segmentation-stats-updated', handleStatsUpdate as EventListener);
+    };
+  }, [segmentationId, segmentIndex]);
+
+  // Update calculating state when props change
+  useEffect(() => {
+    const newCalculatingState = isCalculating || (stats as any)?.isCalculating || false;
+    console.log(`[SegmentStats] Loading state update for segment ${segmentIndex}:`, {
+      isCalculating,
+      statsIsCalculating: (stats as any)?.isCalculating,
+      newCalculatingState,
+      currentState: isCurrentlyCalculating,
+    });
+    setIsCurrentlyCalculating(newCalculatingState);
+  }, [isCalculating, stats, segmentIndex]);
+  const segmentAdditionalStats: Record<
+    string,
+    { label: string; unit: string | null; showLoading?: boolean }
+  > = {
     volume: {
       label: 'Volume',
       unit: 'mm³',
@@ -16,6 +166,7 @@ export function SegmentStats({ stats, showChangeValues = true }: SegmentStatsPro
     diameter: {
       label: 'Diameter',
       unit: 'mm',
+      showLoading: true,
     },
     affected_organs: {
       label: 'Organ',
@@ -46,14 +197,27 @@ export function SegmentStats({ stats, showChangeValues = true }: SegmentStatsPro
           className="text-secondary-foreground flex h-full items-center justify-between text-base leading-normal"
         >
           <span className="flex-1">{value.label}:</span>
-          <span className="flex-1 font-bold">
-            {key === 'affected_organs'
-              ? (affectedOrgansLabels[stats[key]] ?? 'Unknown')
-              : stats[key]
-                ? `${formatValue(stats[key])} ${value.unit}`
-                : '--'}{' '}
-            {stats[`${key}_change`] && renderChangeValue(stats[`${key}_change`] as number)}
-          </span>
+          <div className="flex items-center gap-1">
+            <span className="font-bold">
+              {key === 'affected_organs'
+                ? (affectedOrgansLabels[stats[key]] ?? 'Unknown')
+                : stats[key]
+                  ? `${formatValue(stats[key])} ${value.unit || ''}`
+                  : '--'}
+            </span>
+            {value.showLoading && isCurrentlyCalculating && <PulseIndicator />}
+            {key === 'diameter' && stats.maxDiameterSlice !== undefined && (
+              <button
+                onClick={() => navigateToSlice(stats.maxDiameterSlice)}
+                className="ml-1 rounded bg-blue-500 py-0 px-1 text-xs text-white transition-colors hover:bg-blue-600"
+                title={`Go to slice ${stats.maxDiameterSlice + 1} (max diameter)`}
+              >
+                {/* 📍 Slice {stats.maxDiameterSlice + 1} */}
+                {'>'}
+              </button>
+            )}
+          </div>
+          {stats[`${key}_change`] && renderChangeValue(stats[`${key}_change`] as number)}
         </div>
       ))}
     </div>

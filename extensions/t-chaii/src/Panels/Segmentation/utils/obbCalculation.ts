@@ -34,6 +34,8 @@ interface OBBDiametersResult {
   minDiameterSlice: number;
   overallMajorAxis: [Point, Point];
   overallMinorAxis: [Point, Point];
+  overallMajorAxisPixels: [Point, Point]; // Pixel coordinates for measurement positioning
+  overallMinorAxisPixels: [Point, Point]; // Pixel coordinates for measurement positioning
   sliceResults: SliceResult[];
 }
 
@@ -288,6 +290,8 @@ export function calculateOBBDiameters(
   let minDiameterSlice = -1;
   let overallMajorAxis: [Point, Point] = [{ x: 0, y: 0 }, { x: 0, y: 0 }];
   let overallMinorAxis: [Point, Point] = [{ x: 0, y: 0 }, { x: 0, y: 0 }];
+  let overallMajorAxisPixels: [Point, Point] = [{ x: 0, y: 0 }, { x: 0, y: 0 }];
+  let overallMinorAxisPixels: [Point, Point] = [{ x: 0, y: 0 }, { x: 0, y: 0 }];
 
   // Process each slice
   for (let z = 0; z < depth; z++) {
@@ -338,7 +342,18 @@ export function calculateOBBDiameters(
       // Calculate minimum area rectangle (OBB)
       const obb = minAreaRect(hull);
       
-      // Convert to world coordinates
+      // Keep original pixel coordinates for measurement positioning
+      const majorAxisPixels: [Point, Point] = [
+        { x: obb.majorAxis[0].x, y: obb.majorAxis[0].y },
+        { x: obb.majorAxis[1].x, y: obb.majorAxis[1].y }
+      ];
+      
+      const minorAxisPixels: [Point, Point] = [
+        { x: obb.minorAxis[0].x, y: obb.minorAxis[0].y },
+        { x: obb.minorAxis[1].x, y: obb.minorAxis[1].y }
+      ];
+      
+      // Convert to world coordinates for distance calculation
       const majorAxisWorld: [Point, Point] = [
         { x: obb.majorAxis[0].x * xSpacing, y: obb.majorAxis[0].y * ySpacing },
         { x: obb.majorAxis[1].x * xSpacing, y: obb.majorAxis[1].y * ySpacing }
@@ -369,12 +384,14 @@ export function calculateOBBDiameters(
         maxOverallDiameter = maxDiameter;
         maxDiameterSlice = z;
         overallMajorAxis = majorAxisWorld;
+        overallMajorAxisPixels = majorAxisPixels; // Store pixel coordinates
       }
       
       if (minDiameter < minOverallDiameter) {
         minOverallDiameter = minDiameter;
         minDiameterSlice = z;
         overallMinorAxis = minorAxisWorld;
+        overallMinorAxisPixels = minorAxisPixels; // Store pixel coordinates
       }
       
       console.log(`[OBB] Slice ${z}: max=${maxDiameter.toFixed(2)}mm, min=${minDiameter.toFixed(2)}mm, area=${maxArea.toFixed(1)}px²`);
@@ -395,6 +412,8 @@ export function calculateOBBDiameters(
     minDiameterSlice: minDiameterSlice === -1 ? maxDiameterSlice : minDiameterSlice,
     overallMajorAxis,
     overallMinorAxis,
+    overallMajorAxisPixels, // Add pixel coordinates for measurement positioning
+    overallMinorAxisPixels, // Add pixel coordinates for measurement positioning
     sliceResults
   };
 }

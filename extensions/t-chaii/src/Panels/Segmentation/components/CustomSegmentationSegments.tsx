@@ -128,6 +128,7 @@ export function CustomSegmentationSegments({
             segmentationId={segmentationIdToUse}
             disableEditing={disableEditing}
             representationType={representationToUse.type}
+            servicesManager={servicesManager}
             onEditInfo={handleEditInfo}
             onSegmentColorClick={onSegmentColorClick}
             onToggleVisibility={onToggleSegmentVisibility}
@@ -142,6 +143,7 @@ export function CustomSegmentationSegments({
             segmentationId={segmentationIdToUse}
             disableEditing={disableEditing}
             representationType={representationToUse.type}
+            servicesManager={servicesManager}
             onEditInfo={handleEditInfo}
             onSegmentColorClick={onSegmentColorClick}
             onToggleVisibility={onToggleSegmentVisibility}

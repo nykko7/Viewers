@@ -2,6 +2,7 @@ import React from 'react';
 import { DataRow } from '@ohif/ui-next';
 import { Button } from '@ohif/ui-next';
 import { SegmentStats } from './SegmentStats';
+import { Types } from '@ohif/core';
 
 type SegmentRowProps = {
   segmentationId: string;
@@ -15,6 +16,7 @@ type SegmentRowProps = {
   disableEditing: boolean;
   cachedStats: any;
   representationType: string;
+  servicesManager?: Types.Extensions.ExtensionParams['servicesManager'];
   onEditInfo: (segmentationId: string, segmentIndex: number) => void;
   onSegmentColorClick: (segmentationId: string, segmentIndex: number) => void;
   onToggleVisibility: (segmentationId: string, segmentIndex: number, type: string) => void;
@@ -36,6 +38,7 @@ export function SegmentRow({
   disableEditing,
   cachedStats,
   representationType,
+  servicesManager,
   onEditInfo,
   onSegmentColorClick,
   onToggleVisibility,
@@ -73,6 +76,7 @@ export function SegmentRow({
         isCalculating={(cachedStats as any)?.isCalculating || false}
         segmentationId={segmentationId}
         segmentIndex={segmentIndex}
+        servicesManager={servicesManager}
       />
 
       <Button

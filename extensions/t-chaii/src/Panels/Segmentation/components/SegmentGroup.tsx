@@ -1,6 +1,7 @@
 import React, { ReactNode } from 'react';
 import { SegmentRow } from './SegmentRow';
 import { cn } from '@ohif/ui-next/lib/utils';
+import { Types } from '@ohif/core';
 
 type SegmentGroupProps = {
   title: ReactNode;
@@ -22,6 +23,7 @@ type SegmentGroupProps = {
   segmentationId: string;
   disableEditing: boolean;
   representationType: string;
+  servicesManager?: Types.Extensions.ExtensionParams['servicesManager'];
   onEditInfo: (segmentationId: string, segmentIndex: number) => void;
   onSegmentColorClick: (segmentationId: string, segmentIndex: number) => void;
   onToggleVisibility: (segmentationId: string, segmentIndex: number, type: string) => void;
@@ -37,6 +39,7 @@ export function SegmentGroup({
   segmentationId,
   disableEditing,
   representationType,
+  servicesManager,
   onEditInfo,
   onSegmentColorClick,
   onToggleVisibility,
@@ -69,6 +72,7 @@ export function SegmentGroup({
               disableEditing={disableEditing}
               cachedStats={cachedStats}
               representationType={representationType}
+              servicesManager={servicesManager}
               onEditInfo={onEditInfo}
               onSegmentColorClick={onSegmentColorClick}
               onToggleVisibility={onToggleVisibility}

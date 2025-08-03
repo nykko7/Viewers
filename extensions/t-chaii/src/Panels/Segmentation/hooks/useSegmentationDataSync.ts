@@ -1158,9 +1158,20 @@ async function calculateRealVolumeStatistics(
               segment.cachedStats.minDiameter = obbResult.minDiameter;
               segment.cachedStats.maxDiameterSlice = obbResult.maxDiameterSlice;
               segment.cachedStats.minDiameterSlice = obbResult.minDiameterSlice;
+              
+              console.log(`[OBB] Stored OBB results in cached stats:`, {
+                maxDiameter: obbResult.maxDiameter,
+                minDiameter: obbResult.minDiameter,
+                maxDiameterSlice: obbResult.maxDiameterSlice,
+                minDiameterSlice: obbResult.minDiameterSlice,
+                hasPixelCoords: !!(obbResult.overallMajorAxisPixels && obbResult.overallMinorAxisPixels)
+              });
               // Store coordinate data for measurement creation
               segment.cachedStats.overallMajorAxis = obbResult.overallMajorAxis;
               segment.cachedStats.overallMinorAxis = obbResult.overallMinorAxis;
+              // Store pixel coordinates for proper measurement positioning
+              segment.cachedStats.overallMajorAxisPixels = obbResult.overallMajorAxisPixels;
+              segment.cachedStats.overallMinorAxisPixels = obbResult.overallMinorAxisPixels;
               
               // Always use OBB diameter (no spherical fallback)
               if (obbResult.maxDiameter > 0 && obbResult.maxDiameter < 1000) {

@@ -1,7 +1,7 @@
 /**
  * Pure JavaScript Oriented Bounding Box (OBB) calculation using rotating calipers algorithm
  * with 'largest-area' contour selection strategy for medical image segmentation diameter analysis.
- * 
+ *
  * This implementation provides per-slice OBB analysis with slice identification for navigation.
  */
 
@@ -43,17 +43,21 @@ interface OBBDiametersResult {
  * Calculate convex hull using Graham scan algorithm
  */
 function convexHull(points: Point[]): Point[] {
-  if (points.length < 3) return points;
+  if (points.length < 3) {
+    return points;
+  }
 
   // Find the bottom-most point (and leftmost in case of tie)
   let bottom = 0;
   for (let i = 1; i < points.length; i++) {
-    if (points[i].y < points[bottom].y || 
-        (points[i].y === points[bottom].y && points[i].x < points[bottom].x)) {
+    if (
+      points[i].y < points[bottom].y ||
+      (points[i].y === points[bottom].y && points[i].x < points[bottom].x)
+    ) {
       bottom = i;
     }
   }
-  
+
   // Swap bottom point to first position
   [points[0], points[bottom]] = [points[bottom], points[0]];
   const pivot = points[0];
@@ -72,10 +76,13 @@ function convexHull(points: Point[]): Point[] {
   });
 
   const hull = [pivot, sorted[0]];
-  
+
   for (let i = 1; i < sorted.length; i++) {
     // Remove points that make clockwise turn
-    while (hull.length > 1 && crossProduct(hull[hull.length - 2], hull[hull.length - 1], sorted[i]) <= 0) {
+    while (
+      hull.length > 1 &&
+      crossProduct(hull[hull.length - 2], hull[hull.length - 1], sorted[i]) <= 0
+    ) {
       hull.pop();
     }
     hull.push(sorted[i]);
@@ -95,8 +102,10 @@ function crossProduct(o: Point, a: Point, b: Point): number {
  * Calculate polygon area using shoelace formula
  */
 function polygonArea(points: Point[]): number {
-  if (points.length < 3) return 0;
-  
+  if (points.length < 3) {
+    return 0;
+  }
+
   let area = 0;
   for (let i = 0; i < points.length; i++) {
     const j = (i + 1) % points.length;
@@ -127,7 +136,7 @@ function minAreaRect(hull: Point[]): OBBResult {
       height: 0,
       majorAxis: [p1, p2],
       minorAxis: [p1, p1],
-      area: 0
+      area: 0,
     };
   }
 
@@ -135,33 +144,43 @@ function minAreaRect(hull: Point[]): OBBResult {
   let bestRect: OBBResult = {
     width: 0,
     height: 0,
-    majorAxis: [{ x: 0, y: 0 }, { x: 0, y: 0 }],
-    minorAxis: [{ x: 0, y: 0 }, { x: 0, y: 0 }],
-    area: 0
+    majorAxis: [
+      { x: 0, y: 0 },
+      { x: 0, y: 0 },
+    ],
+    minorAxis: [
+      { x: 0, y: 0 },
+      { x: 0, y: 0 },
+    ],
+    area: 0,
   };
 
   // For each edge of the convex hull
   for (let i = 0; i < hull.length; i++) {
     const edge = {
       x: hull[(i + 1) % hull.length].x - hull[i].x,
-      y: hull[(i + 1) % hull.length].y - hull[i].y
+      y: hull[(i + 1) % hull.length].y - hull[i].y,
     };
-    
+
     // Normalize edge vector
     const edgeLength = Math.sqrt(edge.x ** 2 + edge.y ** 2);
-    if (edgeLength === 0) continue;
-    
+    if (edgeLength === 0) {
+      continue;
+    }
+
     const unitEdge = { x: edge.x / edgeLength, y: edge.y / edgeLength };
     const perpEdge = { x: -unitEdge.y, y: unitEdge.x };
 
     // Project all points onto the edge and perpendicular
-    let minProj = Infinity, maxProj = -Infinity;
-    let minPerpProj = Infinity, maxPerpProj = -Infinity;
-    
+    let minProj = Infinity,
+      maxProj = -Infinity;
+    let minPerpProj = Infinity,
+      maxPerpProj = -Infinity;
+
     for (const point of hull) {
       const proj = point.x * unitEdge.x + point.y * unitEdge.y;
       const perpProj = point.x * perpEdge.x + point.y * perpEdge.y;
-      
+
       minProj = Math.min(minProj, proj);
       maxProj = Math.max(maxProj, proj);
       minPerpProj = Math.min(minPerpProj, perpProj);
@@ -174,23 +193,23 @@ function minAreaRect(hull: Point[]): OBBResult {
 
     if (area < minArea) {
       minArea = area;
-      
+
       // Calculate rectangle corners
       const corner1 = {
         x: minProj * unitEdge.x + minPerpProj * perpEdge.x,
-        y: minProj * unitEdge.y + minPerpProj * perpEdge.y
+        y: minProj * unitEdge.y + minPerpProj * perpEdge.y,
       };
       const corner2 = {
         x: maxProj * unitEdge.x + minPerpProj * perpEdge.x,
-        y: maxProj * unitEdge.y + minPerpProj * perpEdge.y
+        y: maxProj * unitEdge.y + minPerpProj * perpEdge.y,
       };
       const corner3 = {
         x: maxProj * unitEdge.x + maxPerpProj * perpEdge.x,
-        y: maxProj * unitEdge.y + maxPerpProj * perpEdge.y
+        y: maxProj * unitEdge.y + maxPerpProj * perpEdge.y,
       };
       const corner4 = {
         x: minProj * unitEdge.x + maxPerpProj * perpEdge.x,
-        y: minProj * unitEdge.y + maxPerpProj * perpEdge.y
+        y: minProj * unitEdge.y + maxPerpProj * perpEdge.y,
       };
 
       // Determine major and minor axes
@@ -200,7 +219,7 @@ function minAreaRect(hull: Point[]): OBBResult {
           height,
           majorAxis: [corner1, corner2],
           minorAxis: [corner1, corner4],
-          area
+          area,
         };
       } else {
         bestRect = {
@@ -208,7 +227,7 @@ function minAreaRect(hull: Point[]): OBBResult {
           height: width,
           majorAxis: [corner1, corner4],
           minorAxis: [corner1, corner2],
-          area
+          area,
         };
       }
     }
@@ -220,10 +239,15 @@ function minAreaRect(hull: Point[]): OBBResult {
 /**
  * Trace contour from binary mask using Moore neighborhood tracing
  */
-function traceContour(mask: Uint8Array, width: number, height: number, segmentIndex: number): Point[][] {
+function traceContour(
+  mask: Uint8Array,
+  width: number,
+  height: number,
+  segmentIndex: number
+): Point[][] {
   const contours: Point[][] = [];
   const visited = new Uint8Array(width * height);
-  
+
   // Moore neighborhood (8-connected)
   const dx = [-1, -1, -1, 0, 0, 1, 1, 1];
   const dy = [-1, 0, 1, -1, 1, -1, 0, 1];
@@ -235,21 +259,23 @@ function traceContour(mask: Uint8Array, width: number, height: number, segmentIn
         // Start new contour
         const contour: Point[] = [];
         const stack: Point[] = [{ x, y }];
-        
+
         while (stack.length > 0) {
           const current = stack.pop()!;
           const currentIdx = current.y * width + current.x;
-          
-          if (visited[currentIdx] || mask[currentIdx] !== segmentIndex) continue;
-          
+
+          if (visited[currentIdx] || mask[currentIdx] !== segmentIndex) {
+            continue;
+          }
+
           visited[currentIdx] = 1;
           contour.push(current);
-          
+
           // Add neighbors
           for (let i = 0; i < 8; i++) {
             const nx = current.x + dx[i];
             const ny = current.y + dy[i];
-            
+
             if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
               const nIdx = ny * width + nx;
               if (mask[nIdx] === segmentIndex && !visited[nIdx]) {
@@ -258,7 +284,7 @@ function traceContour(mask: Uint8Array, width: number, height: number, segmentIn
             }
           }
         }
-        
+
         if (contour.length > 2) {
           contours.push(contour);
         }
@@ -280,18 +306,31 @@ export function calculateOBBDiameters(
 ): OBBDiametersResult {
   const [width, height, depth] = dimensions;
   const [xSpacing, ySpacing, zSpacing] = spacing;
-  
-  console.log(`[OBB] Starting OBB calculation for segment ${segmentIndex}, dimensions: ${width}x${height}x${depth}`);
-  
+
+  console.log(
+    `[OBB] Starting OBB calculation for segment ${segmentIndex}, dimensions: ${width}x${height}x${depth}`
+  );
+
   const sliceResults: SliceResult[] = [];
   let maxOverallDiameter = 0;
-  let minOverallDiameter = Infinity;
+  let correspondingMinDiameter = 0; // Minor axis corresponding to major axis slice
   let maxDiameterSlice = -1;
-  let minDiameterSlice = -1;
-  let overallMajorAxis: [Point, Point] = [{ x: 0, y: 0 }, { x: 0, y: 0 }];
-  let overallMinorAxis: [Point, Point] = [{ x: 0, y: 0 }, { x: 0, y: 0 }];
-  let overallMajorAxisPixels: [Point, Point] = [{ x: 0, y: 0 }, { x: 0, y: 0 }];
-  let overallMinorAxisPixels: [Point, Point] = [{ x: 0, y: 0 }, { x: 0, y: 0 }];
+  let overallMajorAxis: [Point, Point] = [
+    { x: 0, y: 0 },
+    { x: 0, y: 0 },
+  ];
+  let overallMinorAxis: [Point, Point] = [
+    { x: 0, y: 0 },
+    { x: 0, y: 0 },
+  ];
+  let overallMajorAxisPixels: [Point, Point] = [
+    { x: 0, y: 0 },
+    { x: 0, y: 0 },
+  ];
+  let overallMinorAxisPixels: [Point, Point] = [
+    { x: 0, y: 0 },
+    { x: 0, y: 0 },
+  ];
 
   // Process each slice
   for (let z = 0; z < depth; z++) {
@@ -299,11 +338,11 @@ export function calculateOBBDiameters(
       // Extract slice data
       const sliceData = new Uint8Array(width * height);
       const sliceOffset = z * width * height;
-      
+
       for (let i = 0; i < width * height; i++) {
         sliceData[i] = voxelData[sliceOffset + i];
       }
-      
+
       // Check if slice has segment pixels
       let hasSegmentPixels = false;
       for (let i = 0; i < sliceData.length; i++) {
@@ -312,18 +351,22 @@ export function calculateOBBDiameters(
           break;
         }
       }
-      
-      if (!hasSegmentPixels) continue;
-      
+
+      if (!hasSegmentPixels) {
+        continue;
+      }
+
       // Trace contours in the slice
       const contours = traceContour(sliceData, width, height, segmentIndex);
-      
-      if (contours.length === 0) continue;
-      
+
+      if (contours.length === 0) {
+        continue;
+      }
+
       // Apply 'largest-area' strategy: select contour with largest area
       let largestContour: Point[] = [];
       let maxArea = 0;
-      
+
       for (const contour of contours) {
         const area = polygonArea(contour);
         if (area > maxArea) {
@@ -331,42 +374,46 @@ export function calculateOBBDiameters(
           largestContour = contour;
         }
       }
-      
-      if (largestContour.length < 3) continue;
-      
+
+      if (largestContour.length < 3) {
+        continue;
+      }
+
       // Calculate convex hull
       const hull = convexHull([...largestContour]);
-      
-      if (hull.length < 3) continue;
-      
+
+      if (hull.length < 3) {
+        continue;
+      }
+
       // Calculate minimum area rectangle (OBB)
       const obb = minAreaRect(hull);
-      
+
       // Keep original pixel coordinates for measurement positioning
       const majorAxisPixels: [Point, Point] = [
         { x: obb.majorAxis[0].x, y: obb.majorAxis[0].y },
-        { x: obb.majorAxis[1].x, y: obb.majorAxis[1].y }
+        { x: obb.majorAxis[1].x, y: obb.majorAxis[1].y },
       ];
-      
+
       const minorAxisPixels: [Point, Point] = [
         { x: obb.minorAxis[0].x, y: obb.minorAxis[0].y },
-        { x: obb.minorAxis[1].x, y: obb.minorAxis[1].y }
+        { x: obb.minorAxis[1].x, y: obb.minorAxis[1].y },
       ];
-      
+
       // Convert to world coordinates for distance calculation
       const majorAxisWorld: [Point, Point] = [
         { x: obb.majorAxis[0].x * xSpacing, y: obb.majorAxis[0].y * ySpacing },
-        { x: obb.majorAxis[1].x * xSpacing, y: obb.majorAxis[1].y * ySpacing }
+        { x: obb.majorAxis[1].x * xSpacing, y: obb.majorAxis[1].y * ySpacing },
       ];
-      
+
       const minorAxisWorld: [Point, Point] = [
         { x: obb.minorAxis[0].x * xSpacing, y: obb.minorAxis[0].y * ySpacing },
-        { x: obb.minorAxis[1].x * xSpacing, y: obb.minorAxis[1].y * ySpacing }
+        { x: obb.minorAxis[1].x * xSpacing, y: obb.minorAxis[1].y * ySpacing },
       ];
-      
+
       const maxDiameter = distance(majorAxisWorld[0], majorAxisWorld[1]);
       const minDiameter = distance(minorAxisWorld[0], minorAxisWorld[1]);
-      
+
       // Store slice result
       const sliceResult: SliceResult = {
         slice: z,
@@ -374,46 +421,47 @@ export function calculateOBBDiameters(
         minDiameter,
         majorAxis: majorAxisWorld,
         minorAxis: minorAxisWorld,
-        contourArea: maxArea
+        contourArea: maxArea,
       };
-      
+
       sliceResults.push(sliceResult);
-      
-      // Update overall max/min tracking
+
+      // Update overall max tracking and corresponding minor axis
       if (maxDiameter > maxOverallDiameter) {
         maxOverallDiameter = maxDiameter;
+        correspondingMinDiameter = minDiameter; // Minor axis from the same slice as major axis
         maxDiameterSlice = z;
         overallMajorAxis = majorAxisWorld;
+        overallMinorAxis = minorAxisWorld; // Minor axis from the same slice
         overallMajorAxisPixels = majorAxisPixels; // Store pixel coordinates
+        overallMinorAxisPixels = minorAxisPixels; // Store pixel coordinates from same slice
       }
-      
-      if (minDiameter < minOverallDiameter) {
-        minOverallDiameter = minDiameter;
-        minDiameterSlice = z;
-        overallMinorAxis = minorAxisWorld;
-        overallMinorAxisPixels = minorAxisPixels; // Store pixel coordinates
-      }
-      
-      console.log(`[OBB] Slice ${z}: max=${maxDiameter.toFixed(2)}mm, min=${minDiameter.toFixed(2)}mm, area=${maxArea.toFixed(1)}px²`);
-      
+
+      console.log(
+        `[OBB] Slice ${z}: max=${maxDiameter.toFixed(2)}mm, min=${minDiameter.toFixed(2)}mm, area=${maxArea.toFixed(1)}px²`
+      );
     } catch (error) {
       console.warn(`[OBB] Error processing slice ${z}:`, error);
     }
   }
-  
+
   console.log(`[OBB] Completed OBB calculation: ${sliceResults.length} slices processed`);
-  console.log(`[OBB] Overall max diameter: ${maxOverallDiameter.toFixed(2)}mm (slice ${maxDiameterSlice})`);
-  console.log(`[OBB] Overall min diameter: ${minOverallDiameter.toFixed(2)}mm (slice ${minDiameterSlice})`);
-  
+  console.log(
+    `[OBB] Overall max diameter: ${maxOverallDiameter.toFixed(2)}mm (slice ${maxDiameterSlice})`
+  );
+  console.log(
+    `[OBB] Corresponding min diameter: ${correspondingMinDiameter.toFixed(2)}mm (same slice ${maxDiameterSlice})`
+  );
+
   return {
     maxDiameter: maxOverallDiameter,
-    minDiameter: minOverallDiameter === Infinity ? maxOverallDiameter : minOverallDiameter,
+    minDiameter: correspondingMinDiameter > 0 ? correspondingMinDiameter : maxOverallDiameter,
     maxDiameterSlice,
-    minDiameterSlice: minDiameterSlice === -1 ? maxDiameterSlice : minDiameterSlice,
+    minDiameterSlice: maxDiameterSlice, // Same slice as max diameter
     overallMajorAxis,
     overallMinorAxis,
     overallMajorAxisPixels, // Add pixel coordinates for measurement positioning
     overallMinorAxisPixels, // Add pixel coordinates for measurement positioning
-    sliceResults
+    sliceResults,
   };
 }

@@ -36,6 +36,8 @@ export function SegmentStats({
 }: SegmentStatsProps): React.JSX.Element {
   const [forceUpdate, setForceUpdate] = useState(0);
   const [isCurrentlyCalculating, setIsCurrentlyCalculating] = useState(isCalculating);
+  const [measurementsVisible, setMeasurementsVisible] = useState(false);
+  const [createdMeasurements, setCreatedMeasurements] = useState<string[]>([]);
 
   // Navigation function to go to specific slice
   const navigateToSlice = (sliceIndex: number) => {
@@ -125,10 +127,10 @@ export function SegmentStats({
     }
   };
 
-  // Create measurement annotation for max diameter
-  const createMaxDiameterMeasurement = async () => {
+  // Create measurement annotation for diameter (max or min)
+  const createDiameterMeasurement = async (measurementType: 'max' | 'min') => {
     try {
-      console.log(`[SegmentStats] Creating measurement for max diameter: ${stats.diameter}mm`);
+      console.log(`[SegmentStats] Creating measurement for ${measurementType} diameter`);
 
       if (!segmentationId || segmentIndex === undefined) {
         console.error(
@@ -150,53 +152,93 @@ export function SegmentStats({
 
         const cachedStats = segmentation.segments[segmentIndex].cachedStats;
         const maxDiameterSlice = cachedStats.maxDiameterSlice as number;
+        const minDiameterSlice = cachedStats.minDiameterSlice as number;
         const overallMajorAxis = cachedStats.overallMajorAxis as any;
+        const overallMinorAxis = cachedStats.overallMinorAxis as any;
+        const overallMajorAxisPixels = cachedStats.overallMajorAxisPixels as any;
+        const overallMinorAxisPixels = cachedStats.overallMinorAxisPixels as any;
 
-        if (typeof maxDiameterSlice !== 'number' || !overallMajorAxis) {
-          console.error('[SegmentStats] Missing OBB calculation data for measurement creation:', {
-            maxDiameterSlice,
-            overallMajorAxis: !!overallMajorAxis,
-          });
+        // Get the actual diameter values from OBB calculation results
+        const maxDiameterFromOBB = cachedStats.maxDiameter as number;
+        const minDiameterFromOBB = cachedStats.minDiameter as number;
+
+        const targetSlice = measurementType === 'max' ? maxDiameterSlice : minDiameterSlice;
+        const targetAxis = measurementType === 'max' ? overallMajorAxis : overallMinorAxis;
+        const targetAxisPixels =
+          measurementType === 'max' ? overallMajorAxisPixels : overallMinorAxisPixels;
+        const targetDiameter = measurementType === 'max' ? maxDiameterFromOBB : minDiameterFromOBB;
+
+        if (typeof targetSlice !== 'number' || !targetAxis) {
+          console.error(
+            `[SegmentStats] Missing OBB calculation data for ${measurementType} diameter measurement:`,
+            {
+              targetSlice,
+              targetAxis: !!targetAxis,
+            }
+          );
           return;
         }
 
-        console.log('[SegmentStats] Found OBB data for measurement:', {
-          maxDiameterSlice,
-          overallMajorAxis,
-          diameter: stats.diameter,
+        console.log(`[SegmentStats] Found OBB data for ${measurementType} diameter measurement:`, {
+          targetSlice,
+          targetAxis,
+          targetAxisPixels,
+          diameter: targetDiameter,
+          hasPixelCoords: !!targetAxisPixels,
+          maxDiameterFromOBB,
+          minDiameterFromOBB,
+          statsValues: { diameter: stats.diameter, minDiameter: (stats as any).minDiameter },
+          cachedStatsKeys: Object.keys(cachedStats),
+          allPixelCoords: {
+            major: cachedStats.overallMajorAxisPixels,
+            minor: cachedStats.overallMinorAxisPixels,
+          },
         });
 
-        // Navigate to the max diameter slice first
-        await navigateToSlice(maxDiameterSlice);
+        // Navigate to the target slice first
+        await navigateToSlice(targetSlice);
 
-        // Get pixel coordinates from OBB calculation (before world coordinate conversion)
-        // We need to access the original pixel coordinates, not the world coordinates
-        const cachedStatsDetailed = segmentation.segments[segmentIndex].cachedStats;
-        const pixelCoordinates = cachedStatsDetailed.overallMajorAxisPixels || overallMajorAxis;
+        // Use world coordinates directly from OBB calculation
+        // The OBB calculation already provides properly scaled world coordinates in mm
+        // Using pixel coordinates causes coordinate system scaling issues
+        const coordinatesToUse = targetAxis; // Always use world coordinates
 
-        // Create measurement data using pixel coordinates
+        console.log(`[SegmentStats] Using world coordinates directly from OBB:`, {
+          hasPixelCoords: !!targetAxisPixels,
+          hasWorldCoords: !!targetAxis,
+          usingWorldCoords: true,
+          coordinates: coordinatesToUse,
+          expectedDiameter: targetDiameter,
+        });
+
+        // Create measurement data using available coordinates
         const measurementData = {
-          slice: maxDiameterSlice + 1,
-          diameter: `${stats.diameter?.toFixed(2)}mm`,
+          slice: targetSlice + 1,
+          diameter: `${targetDiameter?.toFixed(2)}mm`,
+          measurementType,
           coordinates: {
             start: {
-              x: pixelCoordinates[0].x || overallMajorAxis[0].x,
-              y: pixelCoordinates[0].y || overallMajorAxis[0].y,
+              x: coordinatesToUse[0].x,
+              y: coordinatesToUse[0].y,
             },
             end: {
-              x: pixelCoordinates[1].x || overallMajorAxis[1].x,
-              y: pixelCoordinates[1].y || overallMajorAxis[1].y,
+              x: coordinatesToUse[1].x,
+              y: coordinatesToUse[1].y,
             },
           },
         };
 
-        console.log('[SegmentStats] Using coordinates:', {
-          pixelCoordinates: pixelCoordinates,
-          worldCoordinates: overallMajorAxis,
-          usingPixels: !!cachedStatsDetailed.overallMajorAxisPixels,
+        console.log(`[SegmentStats] Using coordinates for ${measurementType} diameter:`, {
+          coordinates: coordinatesToUse,
+          measurementType,
+          targetSlice,
+          usingPixelCoords: !!targetAxisPixels,
         });
 
-        console.log('[SegmentStats] Max diameter measurement data:', measurementData);
+        console.log(
+          `[SegmentStats] ${measurementType} diameter measurement data:`,
+          measurementData
+        );
 
         // Try to access OHIF measurementService from servicesManager
         console.log('[SegmentStats] Debugging servicesManager access:', {
@@ -259,59 +301,51 @@ export function SegmentStats({
             totalImages: allImageIds.length,
           });
 
-          // Convert image pixel coordinates to world coordinates using imageToWorld
-          // This is the correct method for converting image coordinates to world space
-          const startImage: [number, number] = [
-            measurementData.coordinates.start.x,
-            measurementData.coordinates.start.y,
+          // Convert OBB world coordinates to Cornerstone world coordinate system
+          // The OBB provides coordinates in mm, but we need to convert them to Cornerstone's world space
+          const imageData = viewport.getImageData();
+          const spacing = imageData?.spacing || [1, 1, 1];
+          const origin = imageData?.origin || [0, 0, 0];
+
+          // Convert OBB world coordinates (mm) to Cornerstone world coordinates
+          const startWorld: [number, number, number] = [
+            measurementData.coordinates.start.x + origin[0],
+            measurementData.coordinates.start.y + origin[1],
+            targetSliceIndex * spacing[2] + origin[2],
           ];
-          const endImage: [number, number] = [
-            measurementData.coordinates.end.x,
-            measurementData.coordinates.end.y,
+          const endWorld: [number, number, number] = [
+            measurementData.coordinates.end.x + origin[0],
+            measurementData.coordinates.end.y + origin[1],
+            targetSliceIndex * spacing[2] + origin[2],
           ];
 
-          let startWorld: [number, number, number];
-          let endWorld: [number, number, number];
-
-          try {
-            // Try imageToWorld method if available
-            if (typeof (viewport as any).imageToWorld === 'function') {
-              startWorld = (viewport as any).imageToWorld(startImage);
-              endWorld = (viewport as any).imageToWorld(endImage);
-              console.log('[SegmentStats] Using imageToWorld conversion:', {
-                startImage,
-                endImage,
-                startWorld,
-                endWorld,
-              });
-            } else {
-              // Fallback: use canvasToWorld but log the attempt
-              console.log(
-                '[SegmentStats] imageToWorld not available, using canvasToWorld fallback'
-              );
-              startWorld = viewport.canvasToWorld(startImage);
-              endWorld = viewport.canvasToWorld(endImage);
-              console.log('[SegmentStats] Using canvasToWorld fallback:', {
-                startImage,
-                endImage,
-                startWorld,
-                endWorld,
-              });
+          console.log(
+            `[SegmentStats] Converted OBB coordinates to Cornerstone world space for ${measurementType} diameter:`,
+            {
+              obbCoordinates: {
+                start: {
+                  x: measurementData.coordinates.start.x,
+                  y: measurementData.coordinates.start.y,
+                },
+                end: { x: measurementData.coordinates.end.x, y: measurementData.coordinates.end.y },
+              },
+              cornerstoneWorld: { startWorld, endWorld },
+              imageInfo: { spacing, origin },
+              sliceIndex: targetSliceIndex,
+              measurementType,
+              expectedDiameter: targetDiameter,
+              calculatedDistance:
+                Math.sqrt(
+                  Math.pow(endWorld[0] - startWorld[0], 2) +
+                    Math.pow(endWorld[1] - startWorld[1], 2)
+                ).toFixed(2) + 'mm',
             }
-          } catch (conversionError) {
-            console.error('[SegmentStats] Coordinate conversion failed:', conversionError);
-            // Last resort: use pixel coordinates as world coordinates with proper Z
-            startWorld = [startImage[0], startImage[1], 0];
-            endWorld = [endImage[0], endImage[1], 0];
-            console.log('[SegmentStats] Using pixel coordinates as fallback:', {
-              startWorld,
-              endWorld,
-            });
-          }
+          );
 
           // Create Length annotation data
+          const annotationUID = `${measurementType}-diameter-${segmentationId}-${segmentIndex}-${Date.now()}`;
           const annotationData = {
-            annotationUID: `max-diameter-${segmentationId}-${segmentIndex}-${Date.now()}`,
+            annotationUID,
             metadata: {
               toolName: 'Length',
               viewportId: viewport.id,
@@ -319,7 +353,7 @@ export function SegmentStats({
               referencedImageId: rawImageId,
             },
             data: {
-              label: `Max Diameter S${segmentIndex + 1}`,
+              label: `${measurementType.charAt(0).toUpperCase() + measurementType.slice(1)} Diameter S${segmentIndex + 1}`,
               handles: {
                 points: [startWorld, endWorld],
                 textBox: {
@@ -333,7 +367,7 @@ export function SegmentStats({
               },
               cachedStats: {
                 [currentImageId]: {
-                  length: stats.diameter,
+                  length: targetDiameter,
                   unit: 'mm',
                 },
               },
@@ -362,26 +396,44 @@ export function SegmentStats({
 
           console.log('[SegmentStats] Created Cornerstone annotation:', {
             annotationUID: annotationData.annotationUID,
-            diameter: stats.diameter,
+            diameter: targetDiameter,
             coordinates: { start: startWorld, end: endWorld },
           });
 
-          // Show success message
-          alert(
-            `✅ Measurement Annotation Created!\n\nSlice: ${measurementData.slice}\nDiameter: ${measurementData.diameter}\nAnnotation ID: ${annotationData.annotationUID}\n\n📏 Visual measurement line added to viewer`
+          // Track the created measurement
+          setCreatedMeasurements(prev => [...prev, annotationUID]);
+
+          // Log success message
+          console.log(
+            `[SegmentStats] ${measurementType.charAt(0).toUpperCase() + measurementType.slice(1)} Diameter Measurement Created:`,
+            {
+              slice: measurementData.slice,
+              diameter: measurementData.diameter,
+              annotationUID,
+              measurementType,
+            }
           );
         } catch (ohifError) {
           console.error('[SegmentStats] Failed to create OHIF measurement:', ohifError);
 
           // Fallback to coordinate display
-          console.log('[SegmentStats] Max diameter measurement data ready for visualization:', {
-            slice: measurementData.slice,
-            diameter: measurementData.diameter,
-            coordinates: measurementData.coordinates,
-          });
+          console.log(
+            `[SegmentStats] ${measurementType} diameter measurement data ready for visualization:`,
+            {
+              slice: measurementData.slice,
+              diameter: measurementData.diameter,
+              coordinates: measurementData.coordinates,
+            }
+          );
 
-          alert(
-            `⚠️ Visual measurement creation failed\n\nSlice: ${measurementData.slice}\nDiameter: ${measurementData.diameter}\nLocation: (${measurementData.coordinates.start.x.toFixed(1)}, ${measurementData.coordinates.start.y.toFixed(1)}) to (${measurementData.coordinates.end.x.toFixed(1)}, ${measurementData.coordinates.end.y.toFixed(1)})\n\n📍 You are now on the slice with the maximum diameter\n\nSee console for error details`
+          console.warn(
+            `[SegmentStats] Visual measurement creation failed for ${measurementType} diameter:`,
+            {
+              slice: measurementData.slice,
+              diameter: measurementData.diameter,
+              coordinates: measurementData.coordinates,
+              error: ohifError,
+            }
           );
         }
       } catch (importError) {
@@ -392,6 +444,62 @@ export function SegmentStats({
       }
     } catch (error) {
       console.error('[SegmentStats] Error creating measurement:', error);
+    }
+  };
+
+  // Toggle measurements visibility
+  const toggleMeasurements = async () => {
+    if (measurementsVisible) {
+      // Hide measurements - remove all created annotations
+      await removeMeasurements();
+      setMeasurementsVisible(false);
+    } else {
+      // Show measurements - create both max and min diameter measurements
+      await createDiameterMeasurement('max');
+      await createDiameterMeasurement('min');
+      setMeasurementsVisible(true);
+    }
+  };
+
+  // Remove all created measurements
+  const removeMeasurements = async () => {
+    try {
+      const { annotation } = await import('@cornerstonejs/tools');
+      const { getRenderingEngine } = await import('@cornerstonejs/core');
+
+      const renderingEngine = getRenderingEngine('OHIFCornerstoneRenderingEngine');
+      if (!renderingEngine) {
+        console.warn('[SegmentStats] Rendering engine not found for measurement removal');
+        return;
+      }
+
+      const viewports = renderingEngine.getViewports();
+      const viewport = viewports.find(vp => vp.id.includes('axial')) || viewports[0];
+
+      if (!viewport) {
+        console.warn('[SegmentStats] No viewport found for measurement removal');
+        return;
+      }
+
+      // Remove each created measurement
+      createdMeasurements.forEach(annotationUID => {
+        try {
+          annotation.state.removeAnnotation(annotationUID);
+          console.log(`[SegmentStats] Removed measurement: ${annotationUID}`);
+        } catch (error) {
+          console.warn(`[SegmentStats] Failed to remove measurement ${annotationUID}:`, error);
+        }
+      });
+
+      // Clear the tracking array
+      setCreatedMeasurements([]);
+
+      // Re-render the viewport
+      viewport.render();
+
+      console.log('[SegmentStats] All measurements removed');
+    } catch (error) {
+      console.error('[SegmentStats] Error removing measurements:', error);
     }
   };
 
@@ -438,7 +546,12 @@ export function SegmentStats({
       unit: 'mm³',
     },
     diameter: {
-      label: 'Diameter',
+      label: 'Max Diameter',
+      unit: 'mm',
+      showLoading: true,
+    },
+    minDiameter: {
+      label: 'Min Diameter',
       unit: 'mm',
       showLoading: true,
     },
@@ -489,15 +602,34 @@ export function SegmentStats({
                 >
                   {'>'}
                 </button>
-                {/* <button
-                    onClick={createMaxDiameterMeasurement}
-                    className="rounded bg-green-500 py-0 px-1 text-xs text-white transition-colors hover:bg-green-600"
-                    title={`Create measurement for max diameter (${stats.diameter?.toFixed(2)}mm)`}
-                  >
-                    📏
-                  </button> */}
+                <button
+                  onClick={toggleMeasurements}
+                  className={`rounded py-0 px-1 text-xs text-white transition-colors ${
+                    measurementsVisible
+                      ? 'bg-red-500 hover:bg-red-600'
+                      : 'bg-green-500 hover:bg-green-600'
+                  }`}
+                  title={
+                    measurementsVisible
+                      ? 'Hide diameter measurements'
+                      : 'Show diameter measurements'
+                  }
+                >
+                  {measurementsVisible ? '🚫' : '📏'}
+                </button>
               </div>
             )}
+            {/* {key === 'minDiameter' && stats.minDiameterSlice !== undefined && (
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => navigateToSlice(stats.minDiameterSlice)}
+                  className="rounded bg-purple-500 py-0 px-1 text-xs text-white transition-colors hover:bg-purple-600"
+                  title={`Go to slice ${stats.minDiameterSlice + 1} (min diameter)`}
+                >
+                  {'>'}
+                </button>
+              </div>
+            )} */}
           </div>
           {stats[`${key}_change`] && renderChangeValue(stats[`${key}_change`] as number)}
         </div>

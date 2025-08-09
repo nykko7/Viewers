@@ -55,6 +55,9 @@ function modeFactory({ modeConfiguration }) {
         hangingProtocolService,
       } = servicesManager.services;
 
+      // Ensure default tool is Pan once a viewport is ready
+      let defaultToolInitialized = false;
+
       // Clear previous state
       measurementService.clearMeasurements();
 
@@ -136,6 +139,16 @@ function modeFactory({ modeConfiguration }) {
         if (!isViewportReady) {
           console.warn('Viewport not ready after maximum attempts');
           return;
+        }
+
+        // Set Pan as the active tool once (on first ready viewport)
+        if (!defaultToolInitialized) {
+          try {
+            commandsManager.run('setToolActive', { toolName: 'Pan' });
+            defaultToolInitialized = true;
+          } catch (e) {
+            console.warn('Failed to set default tool to Pan:', e);
+          }
         }
 
         const displaySets = viewportData.data.map(data =>
@@ -304,7 +317,16 @@ function modeFactory({ modeConfiguration }) {
     hangingProtocol: tchaii.hangingProtocol,
     sopClassHandlers: [ohif.sopClassHandler, segmentation.sopClassHandler],
     extensions: extensionDependencies,
-    hotkeys: [...hotkeys.defaults.hotkeyBindings],
+    hotkeys: [
+      ...hotkeys.defaults.hotkeyBindings,
+      {
+        commandName: 'setToolActive',
+        commandOptions: { toolName: 'Pan' },
+        label: 'Deselect Tool',
+        keys: ['esc'],
+        isEditable: true,
+      },
+    ],
     ...modeConfiguration,
   };
 }

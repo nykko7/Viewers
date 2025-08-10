@@ -133,7 +133,9 @@ const createSegmentationsStore = (set, get) => ({
         segment.cachedStats = {
           ...segment.cachedStats,
           volume: segmentInfo.volume,
-          diameter: segmentInfo.axial_diameter,
+          diameter: segmentInfo.major_axis_mm || segmentInfo.axial_diameter, // Use major_axis_mm as primary diameter
+          majorAxisMm: segmentInfo.major_axis_mm,
+          minorAxisMm: segmentInfo.minor_axis_mm,
           axial_diameter: segmentInfo.axial_diameter,
           coronal_diameter: segmentInfo.coronal_diameter,
           sagittal_diameter: segmentInfo.sagittal_diameter,

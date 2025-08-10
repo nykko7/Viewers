@@ -39,6 +39,8 @@ import {
   Segment,
   lesionTypeLabels,
   lesionClassificationLabels,
+  coreClassifications,
+  optionalClassifications,
 } from '../../../types';
 
 import { Check, ChevronsUpDown } from 'lucide-react';
@@ -131,7 +133,7 @@ function StudyGroupRows({
             {segmentData.isSplit && <span className="ml-2 text-orange-500">(split)</span>}
             {segmentData.isMerge && <span className="ml-2 text-blue-500">(merge)</span>}
           </div>
-          <div>{formatValue(segmentData.segment.volume)}</div>
+          <div>{formatValue(segmentData.segment.volume && segmentData.segment.volume > 1000 ? segmentData.segment.volume / 1000 : segmentData.segment.volume)}</div>
           <div>{formatValue((segmentData.segment as any).diameter || segmentData.segment.axial_diameter)}</div>
         </div>
       ))}
@@ -176,6 +178,27 @@ export function EditLesionDialog({
       (item as unknown as SegmentationWithSegments).segmentation.segmentationId ===
       activeSegmentationId
   ) as unknown as SegmentationWithSegments | undefined;
+
+  // Function to get available classifications based on existing segments
+  const getAvailableClassifications = React.useMemo(() => {
+    const availableClassifications = [...coreClassifications]; // Always include core classifications
+    
+    if (activeSegmentation) {
+      // Check if any existing segments have optional classifications
+      const existingClassifications = Object.values(activeSegmentation.segmentation.segments)
+        .map(segment => (segment as any)?.cachedStats?.lession_classification)
+        .filter(Boolean);
+      
+      // Add optional classifications only if they exist in the segmentation
+      optionalClassifications.forEach(classification => {
+        if (existingClassifications.includes(classification)) {
+          availableClassifications.push(classification);
+        }
+      });
+    }
+    
+    return availableClassifications;
+  }, [activeSegmentation]);
 
   const defaultValues: FormValues = React.useMemo(
     () => ({
@@ -668,8 +691,15 @@ export function EditLesionDialog({
       for (const [segmentIndex, segment] of Object.entries(segmentation.segments)) {
         const segmentAny = segment as any;
         if (segmentAny?.cachedStats?.id === segmentId && segmentAny.cachedStats) {
+          // Convert legacy mm³ values to mL if needed (values > 1000 are likely in mm³)
+          let volume = segmentAny.cachedStats.volume;
+          if (volume && volume > 1000) {
+            volume = volume / 1000; // Convert mm³ to mL
+            console.log(`[EditLesionDialog] Converting legacy volume from ${segmentAny.cachedStats.volume} mm³ to ${volume} mL`);
+          }
+          
           const freshStats = {
-            volume: segmentAny.cachedStats.volume,
+            volume: volume,
             diameter: segmentAny.cachedStats.diameter || segmentAny.cachedStats.maxDiameter,
             axial_diameter: segmentAny.cachedStats.diameter || segmentAny.cachedStats.maxDiameter
           };
@@ -891,9 +921,9 @@ export function EditLesionDialog({
                     </SelectTrigger>
                     <SelectContent>
                       <SelectGroup>
-                        {Object.entries(lesionClassificationLabels).map(([value, label]) => (
-                          <SelectItem key={value} value={value}>
-                            {label}
+                        {getAvailableClassifications.map(classification => (
+                          <SelectItem key={classification} value={classification}>
+                            {lesionClassificationLabels[classification]}
                           </SelectItem>
                         ))}
                       </SelectGroup>
@@ -1045,7 +1075,7 @@ export function EditLesionDialog({
                           <div className="text-secondary-foreground grid grid-cols-4 gap-4 px-4 py-3 text-sm font-semibold">
                             <div>Date</div>
                             <div>Segment</div>
-                            <div>Volume (mm³)</div>
+                            <div>Volume (mL)</div>
                             <div>Diameter (mm)</div>
                           </div>
                         </div>

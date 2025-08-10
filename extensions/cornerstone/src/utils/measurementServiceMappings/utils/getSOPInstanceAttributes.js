@@ -30,10 +30,25 @@ export default function getSOPInstanceAttributes(imageId, displaySetService, ann
 function _getUIDFromImageID(imageId) {
   const instance = cornerstone.metaData.get('instance', imageId);
 
+  if (instance) {
+    return {
+      SOPInstanceUID: instance.SOPInstanceUID,
+      SeriesInstanceUID: instance.SeriesInstanceUID,
+      StudyInstanceUID: instance.StudyInstanceUID,
+      frameNumber: instance.frameNumber || 1,
+    };
+  }
+
+  // Fallback: try to read individual tags directly; avoid throwing if provider doesn't supply 'instance'
+  const SOPInstanceUID = cornerstone.metaData.get('SOPInstanceUID', imageId);
+  const SeriesInstanceUID = cornerstone.metaData.get('SeriesInstanceUID', imageId);
+  const StudyInstanceUID = cornerstone.metaData.get('StudyInstanceUID', imageId);
+  const frameNumber = cornerstone.metaData.get('frameNumber', imageId) || 1;
+
   return {
-    SOPInstanceUID: instance.SOPInstanceUID,
-    SeriesInstanceUID: instance.SeriesInstanceUID,
-    StudyInstanceUID: instance.StudyInstanceUID,
-    frameNumber: instance.frameNumber || 1,
+    SOPInstanceUID,
+    SeriesInstanceUID,
+    StudyInstanceUID,
+    frameNumber,
   };
 }

@@ -60,13 +60,16 @@ export const updateSegmentationInfo = async ({
       }
     }
 
-    // Calculate volume in mL (cubic millimeters to milliliters)
-    const volumeInMl = voxelCount * spacing[0] * spacing[1] * spacing[2] * 1e-3;
+    // Calculate volume in mm³ first for diameter calculation
+    const volumeInMm3 = voxelCount * spacing[0] * spacing[1] * spacing[2];
+    // Convert to mL for storage (1 mL = 1000 mm³)
+    const volumeInMl = volumeInMm3 / 1000;
 
     // Calculate approximate diameter (assuming roughly spherical shape)
     // Volume = (4/3)πr³, solve for diameter = 2r
-    const radius = Math.pow((3 * volumeInMl) / (4 * Math.PI), 1 / 3);
-    const diameterInMm = 2 * radius * 10; // Convert to mm
+    // Use mm³ for the calculation to get radius in mm
+    const radius = Math.pow((3 * volumeInMm3) / (4 * Math.PI), 1 / 3);
+    const diameterInMm = 2 * radius; // Already in mm
 
     const additionalStats = {
       diameter: parseFloat(diameterInMm.toFixed(1)), // mm

@@ -94,7 +94,7 @@ const CustomNode = ({ data, id }: NodeProps) => {
         <div className="space-y-1">
           <div className="text-center font-bold">{nodeData.label}</div>
           <div className="text-sm">
-            Volume: {formatValue(nodeData.volume)}mm<sup>3</sup>
+            Volume: {formatValue(nodeData.volume)}mL
           </div>
           <div className="text-sm">Date: {new Date(nodeData.studyDate).toLocaleDateString()}</div>
           <div className="text-sm">Type: {nodeData.classification}</div>

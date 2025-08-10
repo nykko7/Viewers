@@ -2,132 +2,14 @@ import { useEffect } from 'react';
 import { useSegmentationsStore } from '../../../stores/useSegmentationsStore';
 import { cache, metaData, utilities } from '@cornerstonejs/core';
 import { segmentation as cstSegmentation, Enums as cstEnums } from '@cornerstonejs/tools';
-import { getOBBWorkerManager } from '../utils/obbWorkerManager';
 import { calculateOBBDiameters } from '../utils/obbCalculation';
 
 const { SegmentationRepresentations } = cstEnums;
 
-// OpenCV lazy loading - simplified
-let cv: any = null;
-let isLoadingOpenCV = false;
-
-const loadOpenCV = async (): Promise<any> => {
-  if (cv) return cv;
-
-  if (isLoadingOpenCV) {
-    while (isLoadingOpenCV && !cv) {
-      await new Promise(resolve => setTimeout(resolve, 100));
-    }
-    return cv;
-  }
-
-  isLoadingOpenCV = true;
-
-  try {
-    // Check if OpenCV is already available globally
-    if (typeof window !== 'undefined' && (window as any).cv) {
-      cv = (window as any).cv;
-      if (!cv.Mat) {
-        await new Promise(resolve => {
-          cv.onRuntimeInitialized = resolve;
-        });
-      }
-      isLoadingOpenCV = false;
-      console.log('[OpenCV] OpenCV loaded from global window');
-      return cv;
-    }
-
-    // Load OpenCV from CDN to avoid webpack polyfill issues
-    console.log('[OpenCV] Loading OpenCV from CDN...');
-
-    // List of CDN fallbacks
-    const cdnUrls = [
-      'https://cdn.jsdelivr.net/npm/opencv.js@1.2.1/opencv.js',
-      'https://unpkg.com/opencv.js@1.2.1/opencv.js',
-      'https://cdnjs.cloudflare.com/ajax/libs/opencv.js/4.5.5/opencv.js',
-    ];
-
-    const tryLoadFromCDN = async (urls: string[]): Promise<any> => {
-      for (let i = 0; i < urls.length; i++) {
-        const url = urls[i];
-        console.log(`[OpenCV] Trying CDN ${i + 1}/${urls.length}: ${url}`);
-
-        try {
-          const result = await new Promise<any>((resolve, reject) => {
-            const script = document.createElement('script');
-            script.src = url;
-            script.async = true;
-            script.crossOrigin = 'anonymous';
-
-            script.onload = () => {
-              console.log(`[OpenCV] Script loaded from CDN: ${url}`);
-
-              // Wait for OpenCV to be initialized
-              const checkOpenCV = () => {
-                if (typeof (window as any).cv !== 'undefined') {
-                  cv = (window as any).cv;
-
-                  // Wait for OpenCV runtime to be initialized
-                  if (cv.Mat) {
-                    console.log('[OpenCV] OpenCV runtime ready');
-                    resolve(cv);
-                  } else {
-                    cv.onRuntimeInitialized = () => {
-                      console.log('[OpenCV] OpenCV runtime initialized');
-                      resolve(cv);
-                    };
-                  }
-                } else {
-                  // Retry after a short delay
-                  setTimeout(checkOpenCV, 100);
-                }
-              };
-
-              checkOpenCV();
-            };
-
-            script.onerror = error => {
-              console.log(`[OpenCV] Failed to load from CDN: ${url}`, error);
-              document.head.removeChild(script);
-              reject(error);
-            };
-
-            // Add script to document head
-            document.head.appendChild(script);
-          });
-
-          // If we get here, loading was successful
-          isLoadingOpenCV = false;
-          return result;
-        } catch (error) {
-          console.log(`[OpenCV] CDN ${i + 1} failed, trying next...`);
-          continue;
-        }
-      }
-
-      // All CDNs failed
-      console.error('[OpenCV] All CDN sources failed to load OpenCV');
-      isLoadingOpenCV = false;
-      return null;
-    };
-
-    return tryLoadFromCDN(cdnUrls);
-  } catch (error) {
-    console.error('[OpenCV] Error loading OpenCV:', error);
-    isLoadingOpenCV = false;
-    return null;
-  }
-};
-
 // Types
-interface Point {
-  x: number;
-  y: number;
-}
-
 interface SegmentStats {
   voxelCount: number;
-  volume: number; // Volume in mm³
+  volume: number; // Volume in mL
   diameter: number; // Diameter in mm
   majorAxisMm?: number;
   minorAxisMm?: number;
@@ -146,12 +28,18 @@ type SegmentStatsMap = Record<string, SegmentStats>;
 interface UseSegmentationDataSyncProps {
   servicesManager: any;
   subscribeToDataModified?: boolean;
+  // Debounce time (ms) specifically for triggering heavy OBB calculations
+  obbDebounceMs?: number;
 }
 
 // Global timeout declaration
 declare global {
   interface Window {
     segmentationUpdateTimeout: any;
+    // Map of segmentationId -> (segmentIndex -> timeoutId)
+    obbCalcTimers?: Record<string, Record<number, any>>;
+    // Track if we have completed the initial full-stats computation per segmentation
+    segmentationInitComputed?: Record<string, boolean>;
   }
 }
 
@@ -159,6 +47,7 @@ declare global {
 export function useSegmentationDataSync({
   servicesManager,
   subscribeToDataModified = false,
+  obbDebounceMs = 300,
 }: UseSegmentationDataSyncProps) {
   const updateSegment = useSegmentationsStore(state => state.updateSegment);
   const getStudies = useSegmentationsStore(state => state.getStudies);
@@ -192,7 +81,8 @@ export function useSegmentationDataSync({
             evt,
             currentStudies,
             currentUpdateSegment,
-            segmentationService
+            segmentationService,
+            obbDebounceMs
           );
         }, 50); // Reduced from 500ms to 50ms for immediate responsiveness
       }
@@ -213,7 +103,8 @@ async function handleSegmentationDataModified(
   evt: any,
   studies: any,
   updateSegment: any,
-  segmentationService: any
+  segmentationService: any,
+  obbDebounceMs: number
 ) {
   console.log('[handleSegmentationDataModified] Processing event:', evt);
 
@@ -253,7 +144,8 @@ async function handleSegmentationDataModified(
     segmentation,
     updateSegment,
     segmentationService,
-    activeSegmentIndex
+    activeSegmentIndex,
+    obbDebounceMs
   );
 }
 
@@ -381,11 +273,18 @@ async function calculateUpdatedStatistics(
   segmentation: any,
   updateSegment: any,
   segmentationService: any,
-  activeSegmentIndex?: number
+  activeSegmentIndex?: number,
+  obbDebounceMs: number = 300
 ) {
   console.log('[calculateUpdatedStatistics] Calculating statistics for segmentation:', segId);
 
   try {
+    // Determine if this is the initial full computation for this segmentation
+    if (!window.segmentationInitComputed) {
+      window.segmentationInitComputed = {};
+    }
+    const isInitialFullCompute = window.segmentationInitComputed[segId] !== true;
+
     const { labelmapVolume } = getVolumesFromSegmentation(segId);
 
     if (!labelmapVolume) {
@@ -399,14 +298,21 @@ async function calculateUpdatedStatistics(
         console.log(
           '[calculateUpdatedStatistics] Found imageIds, attempting to calculate statistics...'
         );
-        return await calculateStatsFromImageIds(
+        const result = await calculateStatsFromImageIds(
           segId,
           segmentation,
           labelmapData,
           updateSegment,
           activeSegmentIndex,
-          segmentationService
+          segmentationService,
+          obbDebounceMs,
+          isInitialFullCompute
         );
+        // Mark initial compute as done
+        if (isInitialFullCompute) {
+          window.segmentationInitComputed[segId] = true;
+        }
+        return result;
       }
 
       console.log(
@@ -558,6 +464,7 @@ function calculateBasicStats(
       segment.cachedStats = {
         ...segment.cachedStats,
         voxelCount,
+        volume: volumeCm3, // Store volume in mL (same as volumeCm3)
         volumeMm3,
         volumeCm3,
         diameter,
@@ -642,6 +549,7 @@ async function calculateStatsWithOBB(
       segment.cachedStats = {
         ...segment.cachedStats,
         voxelCount,
+        volume: volumeCm3, // Store volume in mL (same as volumeCm3)
         volumeMm3,
         volumeCm3,
         diameter: Math.max(majorAxisMm, minorAxisMm), // Use the larger diameter
@@ -665,43 +573,6 @@ async function calculateStatsWithOBB(
   }
 
   console.log('[calculateStatsWithOBB] Statistics calculation completed');
-}
-
-// Extract lesion coordinates from segmentation data
-function extractLesionCoordinates(
-  segmentVoxelData: any,
-  segmentIndex: number,
-  dimensions: number[]
-): number[][] {
-  const coords: number[][] = [];
-
-  if (!segmentVoxelData || !dimensions || dimensions.length < 3) {
-    return coords;
-  }
-
-  const [depth, height, width] = dimensions;
-
-  try {
-    if (segmentVoxelData instanceof Uint8Array || segmentVoxelData instanceof Array) {
-      for (let z = 0; z < depth; z++) {
-        for (let y = 0; y < height; y++) {
-          for (let x = 0; x < width; x++) {
-            const index = z * height * width + y * width + x;
-            if (segmentVoxelData[index] === segmentIndex) {
-              coords.push([z, y, x]);
-            }
-          }
-        }
-      }
-    }
-  } catch (error) {
-    console.error('[extractLesionCoordinates] Error extracting coordinates:', error);
-  }
-
-  console.log(
-    `[extractLesionCoordinates] Extracted ${coords.length} coordinates for segment ${segmentIndex}`
-  );
-  return coords;
 }
 
 // Compute diameters using OpenCV with OBB method and 'largest-area' strategy
@@ -854,12 +725,20 @@ async function calculateStatsFromImageIds(
   labelmapData: any,
   updateSegment: any,
   activeSegmentIndex?: number,
-  segmentationService?: any
+  segmentationService?: any,
+  obbDebounceMs: number = 300,
+  isInitialFullCompute: boolean = false
 ) {
   console.log('[calculateStatsFromImageIds] Calculating statistics from imageIds...');
 
   try {
-    const realStats = await calculateRealVolumeStatistics(segId, labelmapData);
+    const realStats = await calculateRealVolumeStatistics(
+      segId,
+      labelmapData,
+      obbDebounceMs,
+      activeSegmentIndex,
+      isInitialFullCompute
+    );
 
     if (realStats && Object.keys(realStats).length > 0) {
       // Update segments with real statistics
@@ -870,7 +749,7 @@ async function calculateStatsFromImageIds(
         if (segment) {
           // Transform internal SegmentStats format to SegmentStatsType format for UI
           const transformedStats = {
-            volume: stats.volume, // Use mm³ as the single volume unit
+            volume: stats.volume, // Use mL as the single volume unit
             diameter: stats.diameter, // Already in mm
             affected_organs: segment.cachedStats?.affected_organs || '',
             lession_classification: segment.cachedStats?.lession_classification || '',
@@ -905,7 +784,7 @@ async function calculateStatsFromImageIds(
           }
 
           console.log(
-            `[calculateStatsFromImageIds] Updated segment ${segmentIndex} with volume: ${newCachedStats.volume} mm³`
+            `[calculateStatsFromImageIds] Updated segment ${segmentIndex} with volume: ${newCachedStats.volume} mL`
           );
 
           console.log(
@@ -953,7 +832,10 @@ async function calculateStatsFromImageIds(
 // Calculate real volume statistics from image data
 async function calculateRealVolumeStatistics(
   segId: string,
-  labelmapData: any
+  labelmapData: any,
+  obbDebounceMs: number = 300,
+  activeSegmentIndex?: number,
+  isInitialFullCompute: boolean = false
 ): Promise<SegmentStatsMap | null> {
   console.log('[calculateRealVolumeStatistics] Starting real volume calculation...');
   console.log('[calculateRealVolumeStatistics] Labelmap data:', labelmapData);
@@ -1080,42 +962,63 @@ async function calculateRealVolumeStatistics(
       const stats = segmentStats[segmentValue];
       const segmentIndex = parseInt(segmentValue);
 
-      // Calculate volume in mm³
-      stats.volume = stats.voxelCount * voxelVolumeMm3;
+      // If not initial compute, only process active segment to avoid freezing
+      if (!isInitialFullCompute && activeSegmentIndex != null && segmentIndex !== activeSegmentIndex) {
+        continue;
+      }
+
+      // Calculate volume in mL (convert from mm³)
+      stats.volume = (stats.voxelCount * voxelVolumeMm3) / 1000;
 
       // Don't calculate spherical diameter - only use OBB calculation
       // Keep existing diameter if it exists and is reasonable, otherwise set to null
       if (!stats.diameter || stats.diameter < 1 || stats.diameter > 1000) {
         stats.diameter = null; // Will be set by OBB calculation
       }
-      
+
       // Mark as calculating for loading indicator
       (stats as any).isCalculating = true;
-      console.log(`[DEBUG] Segment ${segmentIndex} should show loading indicator (isCalculating: true)`);
-      console.log(`[DEBUG] Segment ${segmentIndex} current diameter: ${stats.diameter?.toFixed(2) || 'null'}mm (waiting for OBB calculation)`);
-      
-      // Start async OBB calculation for enhanced diameter measurement
-      setTimeout(async () => {
+      console.log(
+        `[DEBUG] Segment ${segmentIndex} should show loading indicator (isCalculating: true)`
+      );
+      console.log(
+        `[DEBUG] Segment ${segmentIndex} current diameter: ${stats.diameter?.toFixed(2) || 'null'}mm (waiting for OBB calculation)`
+      );
+
+      // Debounced async OBB calculation per segmentation and segment
+      if (!window.obbCalcTimers) {
+        window.obbCalcTimers = {};
+      }
+      if (!window.obbCalcTimers[segId]) {
+        window.obbCalcTimers[segId] = {} as Record<number, any>;
+      }
+
+      const segTimers = window.obbCalcTimers[segId];
+      if (segTimers[segmentIndex]) {
+        clearTimeout(segTimers[segmentIndex]);
+      }
+
+      segTimers[segmentIndex] = setTimeout(async () => {
         try {
           console.log(`[OBB] Starting OBB calculation for segment ${segmentIndex}`);
-          
+
           // Get image dimensions
           const firstImage = cache.getImage(imageIds[0]);
           if (!firstImage) {
             throw new Error('Could not get first image for dimensions');
           }
-          
+
           const width = firstImage.width || firstImage.columns || 0;
           const height = firstImage.height || firstImage.rows || 0;
           const depth = imageIds.length;
-          
+
           if (width === 0 || height === 0) {
             throw new Error('Invalid image dimensions');
           }
-          
+
           // Reconstruct 3D volume data
           const segmentVoxelData = new Uint8Array(width * height * depth);
-          
+
           // Fill with segment data from each slice
           for (let z = 0; z < imageIds.length; z++) {
             try {
@@ -1123,12 +1026,12 @@ async function calculateRealVolumeStatistics(
               if (image && image.getPixelData) {
                 const pixelData = image.getPixelData();
                 const sliceOffset = z * width * height;
-                
+
                 for (let i = 0; i < pixelData.length && i < width * height; i++) {
                   segmentVoxelData[sliceOffset + i] = pixelData[i];
                 }
               }
-              
+
               // Yield every 20 slices to prevent blocking
               if (z % 20 === 0) {
                 await new Promise(resolve => setTimeout(resolve, 0));
@@ -1137,9 +1040,11 @@ async function calculateRealVolumeStatistics(
               console.warn(`[OBB] Error processing slice ${z}:`, error);
             }
           }
-          
-          console.log(`[OBB] Reconstructed volume for segment ${segmentIndex}: ${width}x${height}x${depth}`);
-          
+
+          console.log(
+            `[OBB] Reconstructed volume for segment ${segmentIndex}: ${width}x${height}x${depth}`
+          );
+
           // Calculate OBB diameters
           const obbResult = calculateOBBDiameters(
             segmentVoxelData,
@@ -1147,7 +1052,7 @@ async function calculateRealVolumeStatistics(
             [width, height, depth],
             [pixelSpacing[0], pixelSpacing[1], sliceThickness]
           );
-          
+
           // Update segment with OBB results
           const updatedSegmentation = cstSegmentation.state.getSegmentation(segId);
           if (updatedSegmentation && updatedSegmentation.segments[segmentIndex]) {
@@ -1158,13 +1063,15 @@ async function calculateRealVolumeStatistics(
               segment.cachedStats.minDiameter = obbResult.minDiameter;
               segment.cachedStats.maxDiameterSlice = obbResult.maxDiameterSlice;
               segment.cachedStats.minDiameterSlice = obbResult.minDiameterSlice;
-              
+
               console.log(`[OBB] Stored OBB results in cached stats:`, {
                 maxDiameter: obbResult.maxDiameter,
                 minDiameter: obbResult.minDiameter,
                 maxDiameterSlice: obbResult.maxDiameterSlice,
                 minDiameterSlice: obbResult.minDiameterSlice,
-                hasPixelCoords: !!(obbResult.overallMajorAxisPixels && obbResult.overallMinorAxisPixels)
+                hasPixelCoords: !!(
+                  obbResult.overallMajorAxisPixels && obbResult.overallMinorAxisPixels
+                ),
               });
               // Store coordinate data for measurement creation
               segment.cachedStats.overallMajorAxis = obbResult.overallMajorAxis;
@@ -1172,54 +1079,59 @@ async function calculateRealVolumeStatistics(
               // Store pixel coordinates for proper measurement positioning
               segment.cachedStats.overallMajorAxisPixels = obbResult.overallMajorAxisPixels;
               segment.cachedStats.overallMinorAxisPixels = obbResult.overallMinorAxisPixels;
-              
+
               // Always use OBB diameter (no spherical fallback)
               if (obbResult.maxDiameter > 0 && obbResult.maxDiameter < 1000) {
                 segment.cachedStats.diameter = obbResult.maxDiameter;
-                console.log(`[OBB] Updated segment ${segmentIndex} diameter to OBB: ${obbResult.maxDiameter.toFixed(2)}mm`);
+                console.log(
+                  `[OBB] Updated segment ${segmentIndex} diameter to OBB: ${obbResult.maxDiameter.toFixed(2)}mm`
+                );
               } else {
-                console.log(`[OBB] Invalid OBB diameter for segment ${segmentIndex}: ${obbResult.maxDiameter.toFixed(2)}mm - keeping existing value`);
+                console.log(
+                  `[OBB] Invalid OBB diameter for segment ${segmentIndex}: ${obbResult.maxDiameter.toFixed(2)}mm - keeping existing value`
+                );
               }
-              
+
               // Remove calculating flag
               delete (segment.cachedStats as any).isCalculating;
-              
+
               // DO NOT UPDATE ZUSTAND STORE - This causes data corruption!
               // The OBB results should only be stored in Cornerstone segmentation object
               // to avoid contaminating the shared studies data across different study contexts.
-              console.log(`[OBB] Skipping store update to prevent data corruption - OBB result stored in Cornerstone only`);
-              
+              console.log(
+                `[OBB] Skipping store update to prevent data corruption - OBB result stored in Cornerstone only`
+              );
+
               // Note: The EditLesionDialog should read OBB results from Cornerstone segmentation
               // instead of from the studies data to get the correct, context-specific values.
-              
+
               // Dispatch UI update event
               const event = new CustomEvent('segmentation-stats-updated', {
-                detail: { segmentationId: segId, segmentIndex, stats: segment.cachedStats }
+                detail: { segmentationId: segId, segmentIndex, stats: segment.cachedStats },
               });
               window.dispatchEvent(event);
               console.log(`[OBB] Dispatched UI update for segment ${segmentIndex}`);
             }
           }
-          
         } catch (error) {
           console.error(`[OBB] Error in OBB calculation for segment ${segmentIndex}:`, error);
-          
+
           // Remove calculating flag and keep spherical diameter
           const updatedSegmentation = cstSegmentation.state.getSegmentation(segId);
           if (updatedSegmentation && updatedSegmentation.segments[segmentIndex]) {
             const segment = updatedSegmentation.segments[segmentIndex];
             if (segment.cachedStats) {
               delete (segment.cachedStats as any).isCalculating;
-              
+
               // Dispatch UI update event even on error
               const event = new CustomEvent('segmentation-stats-updated', {
-                detail: { segmentationId: segId, segmentIndex, stats: segment.cachedStats }
+                detail: { segmentationId: segId, segmentIndex, stats: segment.cachedStats },
               });
               window.dispatchEvent(event);
             }
           }
         }
-      }, 100); // Small delay to allow UI to show loading state
+      }, obbDebounceMs);
 
       console.log(`[calculateRealVolumeStatistics] Segment ${segmentValue} final statistics:`, {
         voxelCount: stats.voxelCount,
@@ -1228,10 +1140,12 @@ async function calculateRealVolumeStatistics(
         isCalculating: (stats as any).isCalculating,
         segmentIndex: segmentIndex,
       });
-      
+
       // Debug: Log which segment should show loading indicator
       if ((stats as any).isCalculating) {
-        console.log(`[DEBUG] Segment ${segmentIndex} should show loading indicator (isCalculating: true)`);
+        console.log(
+          `[DEBUG] Segment ${segmentIndex} should show loading indicator (isCalculating: true)`
+        );
       }
 
       finalStats[segmentValue] = stats;
@@ -1239,9 +1153,7 @@ async function calculateRealVolumeStatistics(
 
     console.log('[calculateRealVolumeStatistics] Final segment statistics:', finalStats);
 
-    console.log(
-      '[calculateRealVolumeStatistics] Completed image-based calculation'
-    );
+    console.log('[calculateRealVolumeStatistics] Completed image-based calculation');
     return finalStats;
   } catch (error) {
     console.error(

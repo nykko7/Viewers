@@ -16,7 +16,15 @@ export const lesionClassificationLabels: Record<string, string> = {
   Target: 'Target',
   'Non-Target': 'Non-Target',
   'New Lesion': 'New Lesion',
+  'Non-Measurable': 'Non-Measurable',
+  'Unknown': 'Unknown',
 };
+
+// Core classifications that should always be visible
+export const coreClassifications = ['Target', 'Non-Target', 'New Lesion'];
+
+// Optional classifications that should only be visible if they exist in the segmentation
+export const optionalClassifications = ['Non-Measurable', 'Unknown'];
 
 export const lesionTypeLabels: Record<string, string> = {
   Mass: 'Mass',

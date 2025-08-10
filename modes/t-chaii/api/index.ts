@@ -14,8 +14,10 @@ type Segment = BaseEntity & {
   axial_diameter: number | null;
   coronal_diameter: number | null;
   sagittal_diameter: number | null;
-  lession_classification: 'Target' | 'Non-Target' | 'New Lesion';
+  lession_classification: 'Target' | 'Non-Target' | 'New Lesion' | 'Non-Measurable' | 'Unknown';
   lession_type: 'Mass' | 'Other' | 'Lymph';
+  major_axis_mm: number | null;
+  minor_axis_mm: number | null;
   segmentation_type: string;
   window_width: number | null;
   window_level: number | null;

@@ -43,6 +43,7 @@ export function CustomPanelSegmentation({
   useSegmentationDataSync({
     servicesManager,
     subscribeToDataModified: true,
+    obbDebounceMs: 300,
   });
 
   const { mode: SegmentationTableMode } = customizationService.getCustomization(

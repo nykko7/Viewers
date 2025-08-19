@@ -1,10 +1,25 @@
-import React, { useEffect, useState } from 'react';
-import { affectedOrgansLabels, SegmentStatsType } from '../../../types';
-import { formatValue } from '../../../utils/formatValue';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { Icon, Tooltip } from '@ohif/ui';
+import { useViewportGrid } from '@ohif/ui';
+import { useSegmentationsStore } from '../../../stores/useSegmentationsStore';
+import { formatVolumeForDisplay } from '../utils/volumeUnits';
+import { formatValue } from '../utils/formatters';
+import { affectedOrgansLabels, optionalClassifications } from '../../../types';
 import { getRenderingEngine } from '@cornerstonejs/core';
-import { ToolGroupManager } from '@cornerstonejs/tools';
+import { ToolGroupManager, annotation } from '@cornerstonejs/tools';
 import { Types } from '@ohif/core';
 import * as cornerstone from '@cornerstonejs/core';
+
+// Define the SegmentStatsType interface
+interface SegmentStatsType {
+  volume?: number;
+  diameter?: number;
+  minDiameter?: number;
+  affected_organs?: string;
+  lession_classification?: string;
+  lession_type?: string;
+  [key: string]: any;
+}
 
 type SegmentStatsProps = {
   stats: SegmentStatsType & {
@@ -43,9 +58,8 @@ export function SegmentStats({
   // Function to check if measurements already exist for this segment
   const checkExistingMeasurements = (): boolean => {
     if (!segmentationId || segmentIndex === undefined) return false;
-    
+
     try {
-      const { annotation } = require('@cornerstonejs/tools');
       const renderingEngine = getRenderingEngine('OHIFCornerstoneRenderingEngine');
       if (!renderingEngine) return false;
 
@@ -54,13 +68,14 @@ export function SegmentStats({
 
       // Get all Length annotations for this viewport
       const annotations = annotation.state.getAnnotations?.('Length', viewport.element) || [];
-      
+
       // Check if any annotations match our segment pattern
       const segmentMeasurements = annotations.filter((ann: any) => {
         const uid = ann.annotationUID || ann.uid;
-        return uid && (
-          uid.includes(`max-diameter-${segmentationId}-${segmentIndex}`) ||
-          uid.includes(`min-diameter-${segmentationId}-${segmentIndex}`)
+        return (
+          uid &&
+          (uid.includes(`max-diameter-${segmentationId}-${segmentIndex}`) ||
+            uid.includes(`min-diameter-${segmentationId}-${segmentIndex}`))
         );
       });
 
@@ -69,7 +84,7 @@ export function SegmentStats({
         segmentIndex,
         totalAnnotations: annotations.length,
         segmentMeasurements: segmentMeasurements.length,
-        measurementUIDs: segmentMeasurements.map((ann: any) => ann.annotationUID || ann.uid)
+        measurementUIDs: segmentMeasurements.map((ann: any) => ann.annotationUID || ann.uid),
       });
 
       return segmentMeasurements.length > 0;
@@ -82,7 +97,7 @@ export function SegmentStats({
   // Function to remove existing measurements for this segment
   const removeExistingMeasurements = async (): Promise<void> => {
     if (!segmentationId || segmentIndex === undefined) return;
-    
+
     try {
       const { annotation, utilities } = await import('@cornerstonejs/tools');
       const renderingEngine = getRenderingEngine('OHIFCornerstoneRenderingEngine');
@@ -94,7 +109,7 @@ export function SegmentStats({
       // Try to find the correct viewport (could be 'default' or another ID)
       const viewports = renderingEngine.getViewports();
       const viewport = viewports.find(vp => vp.id === 'default') || viewports[0];
-      
+
       if (!viewport) {
         console.warn('[SegmentStats] No viewport found for measurement removal');
         return;
@@ -104,29 +119,32 @@ export function SegmentStats({
         segmentationId,
         segmentIndex,
         viewportId: viewport.id,
-        viewportType: viewport.type
+        viewportType: viewport.type,
       });
 
       // Get all Length annotations for this viewport
       const annotations = annotation.state.getAnnotations?.('Length', viewport.element) || [];
-      
+
       console.log('[SegmentStats] Found annotations before removal:', {
         totalAnnotations: annotations.length,
-        annotationUIDs: annotations.map((ann: any) => ann.annotationUID || ann.uid)
+        annotationUIDs: annotations.map((ann: any) => ann.annotationUID || ann.uid),
       });
-      
+
       // Find and remove annotations that match our segment pattern
       const segmentMeasurements = annotations.filter((ann: any) => {
         const uid = ann.annotationUID || (ann as any).uid;
-        return uid && (
-          uid.includes(`max-diameter-${segmentationId}-${segmentIndex}`) ||
-          uid.includes(`min-diameter-${segmentationId}-${segmentIndex}`)
+        return (
+          uid &&
+          (uid.includes(`max-diameter-${segmentationId}-${segmentIndex}`) ||
+            uid.includes(`min-diameter-${segmentationId}-${segmentIndex}`))
         );
       });
 
       console.log('[SegmentStats] Found segment measurements to remove:', {
         count: segmentMeasurements.length,
-        measurementUIDs: segmentMeasurements.map((ann: any) => ann.annotationUID || (ann as any).uid)
+        measurementUIDs: segmentMeasurements.map(
+          (ann: any) => ann.annotationUID || (ann as any).uid
+        ),
       });
 
       if (segmentMeasurements.length === 0) {
@@ -140,7 +158,7 @@ export function SegmentStats({
         try {
           // Try multiple removal methods
           annotation.state.removeAnnotation?.(uid);
-          
+
           console.log('[SegmentStats] Removed measurement annotation:', uid);
         } catch (removeError) {
           console.warn('[SegmentStats] Error removing annotation:', uid, removeError);
@@ -157,16 +175,16 @@ export function SegmentStats({
 
       // Trigger viewport render to update display
       viewport.render();
-      
+
       // Verify removal
       setTimeout(() => {
-        const remainingAnnotations = annotation.state.getAnnotations?.('Length', viewport.element) || [];
+        const remainingAnnotations =
+          annotation.state.getAnnotations?.('Length', viewport.element) || [];
         console.log('[SegmentStats] Annotations after removal:', {
           totalAnnotations: remainingAnnotations.length,
-          annotationUIDs: remainingAnnotations.map((ann: any) => ann.annotationUID || ann.uid)
+          annotationUIDs: remainingAnnotations.map((ann: any) => ann.annotationUID || ann.uid),
         });
       }, 100);
-      
     } catch (error) {
       console.error('[SegmentStats] Error removing existing measurements:', error);
     }
@@ -203,7 +221,8 @@ export function SegmentStats({
 
       // Resolve active viewport via services to ensure correct series
       const viewportGridService = (servicesManager as any)?.services?.viewportGridService;
-      const cornerstoneViewportService = (servicesManager as any)?.services?.cornerstoneViewportService;
+      const cornerstoneViewportService = (servicesManager as any)?.services
+        ?.cornerstoneViewportService;
       const activeViewportId = viewportGridService?.getActiveViewportId?.();
       const viewport = cornerstoneViewportService?.getCornerstoneViewport?.(activeViewportId);
 
@@ -274,10 +293,15 @@ export function SegmentStats({
           });
           segmentationService.setActiveSegment(segmentationId, segmentIndex);
         } else {
-          console.warn('[SegmentStats] Unable to select segment: no commandsManager or segmentationService available');
+          console.warn(
+            '[SegmentStats] Unable to select segment: no commandsManager or segmentationService available'
+          );
         }
       } catch (selErr) {
-        console.warn('[SegmentStats] Failed to set active segment before navigation/measurement', selErr);
+        console.warn(
+          '[SegmentStats] Failed to set active segment before navigation/measurement',
+          selErr
+        );
       }
 
       // Access OBB calculation results directly from Cornerstone segmentation state
@@ -413,7 +437,8 @@ export function SegmentStats({
 
           // Use the active Cornerstone viewport from services
           const viewportGridService = (servicesManager as any)?.services?.viewportGridService;
-          const cornerstoneViewportService = (servicesManager as any)?.services?.cornerstoneViewportService;
+          const cornerstoneViewportService = (servicesManager as any)?.services
+            ?.cornerstoneViewportService;
           const activeViewportId = viewportGridService?.getActiveViewportId?.();
           const viewport = cornerstoneViewportService?.getCornerstoneViewport?.(activeViewportId);
 
@@ -423,9 +448,17 @@ export function SegmentStats({
 
           // Ensure we are on the target slice, then get current imageId from the active viewport
           const targetSliceIndex = measurementData.slice - 1; // Convert to 0-based index
-          try { (viewport as any).setImageIdIndex?.(targetSliceIndex); } catch {}
-          try { viewport.render?.(); } catch {}
-          await new Promise<void>(resolve => (typeof requestAnimationFrame !== 'undefined' ? requestAnimationFrame(() => resolve()) : setTimeout(() => resolve(), 0)));
+          try {
+            (viewport as any).setImageIdIndex?.(targetSliceIndex);
+          } catch {}
+          try {
+            viewport.render?.();
+          } catch {}
+          await new Promise<void>(resolve =>
+            typeof requestAnimationFrame !== 'undefined'
+              ? requestAnimationFrame(() => resolve())
+              : setTimeout(() => resolve(), 0)
+          );
           const currentImageId: string = (viewport as any).getCurrentImageId?.() || '';
 
           if (!currentImageId) {
@@ -468,139 +501,171 @@ export function SegmentStats({
           let endWorld: [number, number, number];
 
           // Always use pixel coordinates from OBB if available - they are the true segment positions
-          const startPx = (targetAxisPixels && targetAxisPixels[0]);
-          const endPx = (targetAxisPixels && targetAxisPixels[1]);
-          
+          const startPx = targetAxisPixels && targetAxisPixels[0];
+          const endPx = targetAxisPixels && targetAxisPixels[1];
+
           if (startPx && endPx) {
             console.log('[SegmentStats] Using OBB pixel coordinates for segment positioning:', {
               startPx: { x: startPx.x, y: startPx.y },
               endPx: { x: endPx.x, y: endPx.y },
-              targetSliceIndex
+              targetSliceIndex,
             });
-            
+
             // Check viewport orientation and transformation
             const camera = viewport.getCamera?.();
             const properties = viewport.getProperties?.();
             console.log('[SegmentStats] Viewport orientation info:', {
-              camera: camera ? {
-                viewPlaneNormal: camera.viewPlaneNormal,
-                viewUp: camera.viewUp,
-                focalPoint: camera.focalPoint
-              } : null,
-              properties: properties ? {
-                rotation: properties.rotation,
-                flipHorizontal: properties.flipHorizontal,
-                flipVertical: properties.flipVertical
-              } : null,
-              viewportType: viewport.type
+              camera: camera
+                ? {
+                    viewPlaneNormal: camera.viewPlaneNormal,
+                    viewUp: camera.viewUp,
+                    focalPoint: camera.focalPoint,
+                  }
+                : null,
+              properties: properties
+                ? {
+                    rotation: properties.rotation,
+                    flipHorizontal: properties.flipHorizontal,
+                    flipVertical: properties.flipVertical,
+                  }
+                : null,
+              viewportType: viewport.type,
             });
-            
+
             // Convert OBB image pixel coordinates using Cornerstone's coordinate transformation
             // OBB coordinates are in image space, need to convert to world space properly
             const imagePixelStart = [startPx.x, startPx.y] as [number, number];
             const imagePixelEnd = [endPx.x, endPx.y] as [number, number];
-            
+
             console.log('[SegmentStats] Converting image pixels to world coordinates:', {
               imagePixels: { start: imagePixelStart, end: imagePixelEnd },
-              viewportType: viewport.type
+              viewportType: viewport.type,
             });
-            
+
             // For stack viewports, use viewport-specific coordinate transforms with canvas bounds clamping
             if (viewport.type === 'stack') {
               try {
                 // Get canvas element and size for bounds checking
                 const el: any = (viewport as any).element;
-                const canvasSize = el ? { w: el.clientWidth, h: el.clientHeight } : { w: 512, h: 512 };
-                
+                const canvasSize = el
+                  ? { w: el.clientWidth, h: el.clientHeight }
+                  : { w: 512, h: 512 };
+
                 // Apply canvas bounds clamping to ensure annotations are visible
                 // Add 10px margins from edges to ensure visibility
                 const clampToCanvas = (pt: [number, number]): [number, number] => [
                   Math.max(10, Math.min(pt[0], canvasSize.w - 10)),
-                  Math.max(10, Math.min(pt[1], canvasSize.h - 10))
+                  Math.max(10, Math.min(pt[1], canvasSize.h - 10)),
                 ];
-                
+
                 const clampedStart = clampToCanvas(imagePixelStart);
                 const clampedEnd = clampToCanvas(imagePixelEnd);
-                
+
                 console.log('[SegmentStats] Applied canvas bounds clamping:', {
                   original: { start: imagePixelStart, end: imagePixelEnd },
                   clamped: { start: clampedStart, end: clampedEnd },
-                  canvasSize
+                  canvasSize,
                 });
-                
+
                 // Use viewport's coordinate transformation methods for proper image-to-world conversion
                 // This ensures coordinates are properly aligned with the current viewport state
                 if ((viewport as any).canvasToWorld && (viewport as any).worldToCanvas) {
                   // First, we need to convert image pixel coordinates to world coordinates properly
                   // For stack viewports, we need to account for image scaling and positioning
-                  
+
                   // Use DICOM-based coordinate transformation for accurate positioning and measurements
                   // This approach uses the actual DICOM pixel spacing and image positioning data
                   const imageData = viewport.getImageData?.();
                   const currentImageId = viewport.getCurrentImageId?.();
-                  
+
                   // Get DICOM metadata for proper coordinate transformation
                   let pixelSpacing: [number, number] | undefined;
                   let imageOrigin: [number, number, number] = [0, 0, 0];
                   let imageOrientation: number[] = [1, 0, 0, 0, 1, 0];
-                  
+
                   if (currentImageId) {
                     // Try to get pixel spacing from DICOM metadata
-                    const imagePlaneModule = cornerstone.metaData.get('imagePlaneModule', currentImageId);
-                    const imagePixelModule = cornerstone.metaData.get('imagePixelModule', currentImageId);
-                    
+                    const imagePlaneModule = cornerstone.metaData.get(
+                      'imagePlaneModule',
+                      currentImageId
+                    );
+                    const imagePixelModule = cornerstone.metaData.get(
+                      'imagePixelModule',
+                      currentImageId
+                    );
+
                     pixelSpacing = imagePlaneModule?.pixelSpacing || imagePixelModule?.pixelSpacing;
                     imageOrigin = imagePlaneModule?.imagePositionPatient || [0, 0, 0];
-                    imageOrientation = imagePlaneModule?.imageOrientationPatient || [1, 0, 0, 0, 1, 0];
-                    
+                    imageOrientation = imagePlaneModule?.imageOrientationPatient || [
+                      1, 0, 0, 0, 1, 0,
+                    ];
+
                     console.log('[SegmentStats] Retrieved DICOM metadata:', {
                       pixelSpacing,
                       imageOrigin,
-                      imageOrientation: imageOrientation.slice(0, 6)
+                      imageOrientation: imageOrientation.slice(0, 6),
                     });
                   }
-                  
+
                   // If we don't have proper pixel spacing, calculate it from the expected OBB diameter
                   if (!pixelSpacing || pixelSpacing[0] === 1.0 || pixelSpacing[1] === 1.0) {
                     const pixelDistance = Math.sqrt(
-                      Math.pow(imagePixelEnd[0] - imagePixelStart[0], 2) + 
-                      Math.pow(imagePixelEnd[1] - imagePixelStart[1], 2)
+                      Math.pow(imagePixelEnd[0] - imagePixelStart[0], 2) +
+                        Math.pow(imagePixelEnd[1] - imagePixelStart[1], 2)
                     );
                     const expectedDiameter = targetDiameter; // Use the actual expected diameter from OBB
                     const calculatedSpacing = expectedDiameter / pixelDistance;
                     pixelSpacing = [calculatedSpacing, calculatedSpacing];
-                    
+
                     console.log('[SegmentStats] Calculated pixel spacing from OBB diameter:', {
                       expectedDiameter,
                       pixelDistance,
                       calculatedSpacing,
-                      pixelSpacing
+                      pixelSpacing,
                     });
                   }
-                  
+
                   const spacingX = pixelSpacing[0]; // mm per pixel in X direction
                   const spacingY = pixelSpacing[1]; // mm per pixel in Y direction
-                  
+
                   // Convert image pixel coordinates to physical world coordinates using DICOM transformation
                   // Formula: WorldCoord = ImageOrigin + (PixelCoord * PixelSpacing * ImageOrientation)
-                  const startWorldX = imageOrigin[0] + (imagePixelStart[0] * spacingX * imageOrientation[0]) + (imagePixelStart[1] * spacingY * imageOrientation[3]);
-                  const startWorldY = imageOrigin[1] + (imagePixelStart[0] * spacingX * imageOrientation[1]) + (imagePixelStart[1] * spacingY * imageOrientation[4]);
-                  const startWorldZ = imageOrigin[2] + (imagePixelStart[0] * spacingX * imageOrientation[2]) + (imagePixelStart[1] * spacingY * imageOrientation[5]);
-                  
-                  const endWorldX = imageOrigin[0] + (imagePixelEnd[0] * spacingX * imageOrientation[0]) + (imagePixelEnd[1] * spacingY * imageOrientation[3]);
-                  const endWorldY = imageOrigin[1] + (imagePixelEnd[0] * spacingX * imageOrientation[1]) + (imagePixelEnd[1] * spacingY * imageOrientation[4]);
-                  const endWorldZ = imageOrigin[2] + (imagePixelEnd[0] * spacingX * imageOrientation[2]) + (imagePixelEnd[1] * spacingY * imageOrientation[5]);
-                  
+                  const startWorldX =
+                    imageOrigin[0] +
+                    imagePixelStart[0] * spacingX * imageOrientation[0] +
+                    imagePixelStart[1] * spacingY * imageOrientation[3];
+                  const startWorldY =
+                    imageOrigin[1] +
+                    imagePixelStart[0] * spacingX * imageOrientation[1] +
+                    imagePixelStart[1] * spacingY * imageOrientation[4];
+                  const startWorldZ =
+                    imageOrigin[2] +
+                    imagePixelStart[0] * spacingX * imageOrientation[2] +
+                    imagePixelStart[1] * spacingY * imageOrientation[5];
+
+                  const endWorldX =
+                    imageOrigin[0] +
+                    imagePixelEnd[0] * spacingX * imageOrientation[0] +
+                    imagePixelEnd[1] * spacingY * imageOrientation[3];
+                  const endWorldY =
+                    imageOrigin[1] +
+                    imagePixelEnd[0] * spacingX * imageOrientation[1] +
+                    imagePixelEnd[1] * spacingY * imageOrientation[4];
+                  const endWorldZ =
+                    imageOrigin[2] +
+                    imagePixelEnd[0] * spacingX * imageOrientation[2] +
+                    imagePixelEnd[1] * spacingY * imageOrientation[5];
+
                   startWorld = [startWorldX, startWorldY, startWorldZ];
                   endWorld = [endWorldX, endWorldY, endWorldZ];
-                  
+
                   // Calculate the actual distance to verify it matches expected diameter
                   const actualDistance = Math.sqrt(
-                    Math.pow(endWorldX - startWorldX, 2) + 
-                    Math.pow(endWorldY - startWorldY, 2) + 
-                    Math.pow(endWorldZ - startWorldZ, 2)
+                    Math.pow(endWorldX - startWorldX, 2) +
+                      Math.pow(endWorldY - startWorldY, 2) +
+                      Math.pow(endWorldZ - startWorldZ, 2)
                   );
-                  
+
                   console.log('[SegmentStats] Used DICOM-based coordinate transformation:', {
                     imagePixels: { start: imagePixelStart, end: imagePixelEnd },
                     pixelSpacing: { x: spacingX, y: spacingY },
@@ -609,92 +674,121 @@ export function SegmentStats({
                     worldCoords: { start: startWorld, end: endWorld },
                     expectedDiameter: targetDiameter,
                     actualDistance: actualDistance.toFixed(2) + 'mm',
-                    distanceMatch: Math.abs(actualDistance - targetDiameter) < 1.0 ? 'GOOD' : 'NEEDS_ADJUSTMENT'
+                    distanceMatch:
+                      Math.abs(actualDistance - targetDiameter) < 1.0 ? 'GOOD' : 'NEEDS_ADJUSTMENT',
                   });
-                  
+
                   // Verify the coordinates will be visible in the viewport
                   const startCanvas = (viewport as any).worldToCanvas?.(startWorld);
                   const endCanvas = (viewport as any).worldToCanvas?.(endWorld);
-                  const inBounds = (pt: any) => !!pt && pt[0] >= 0 && pt[1] >= 0 && pt[0] <= canvasSize.w && pt[1] <= canvasSize.h;
-                  
+                  const inBounds = (pt: any) =>
+                    !!pt &&
+                    pt[0] >= 0 &&
+                    pt[1] >= 0 &&
+                    pt[0] <= canvasSize.w &&
+                    pt[1] <= canvasSize.h;
+
                   console.log('[SegmentStats] Coordinate visibility check:', {
-                    startCanvas, endCanvas,
+                    startCanvas,
+                    endCanvas,
                     startInBounds: inBounds(startCanvas),
                     endInBounds: inBounds(endCanvas),
-                    canvasSize
+                    canvasSize,
                   });
                 } else {
                   // Fallback: Use DICOM pixel spacing but with clamped coordinates
                   const imageData = viewport.getImageData?.();
                   const metadata = imageData?.metadata || {};
-                  
+
                   // Try multiple ways to get pixel spacing from DICOM metadata
                   let pixelSpacing = metadata.pixelSpacing || metadata.PixelSpacing;
-                  
+
                   // Check if we can get it from the current image metadata
                   if (!pixelSpacing) {
                     const currentImageId = viewport.getCurrentImageId?.();
                     if (currentImageId) {
-                      const imageMetadata = cornerstone.metaData.get('imagePlaneModule', currentImageId) || 
-                                          cornerstone.metaData.get('imagePixelModule', currentImageId);
+                      const imageMetadata =
+                        cornerstone.metaData.get('imagePlaneModule', currentImageId) ||
+                        cornerstone.metaData.get('imagePixelModule', currentImageId);
                       pixelSpacing = imageMetadata?.pixelSpacing || imageMetadata?.PixelSpacing;
                     }
                   }
-                  
+
                   // If still no pixel spacing, calculate from expected vs actual OBB distances
                   if (!pixelSpacing || pixelSpacing[0] === 1.0) {
                     // Calculate pixel spacing based on expected diameter vs pixel distance
                     const expectedDiameter = measurementType === 'max' ? 90.03 : 65.84; // Expected mm
                     const pixelDistance = Math.sqrt(
-                      Math.pow(clampedEnd[0] - clampedStart[0], 2) + 
-                      Math.pow(clampedEnd[1] - clampedStart[1], 2)
+                      Math.pow(clampedEnd[0] - clampedStart[0], 2) +
+                        Math.pow(clampedEnd[1] - clampedStart[1], 2)
                     );
                     const calculatedSpacing = expectedDiameter / pixelDistance;
                     pixelSpacing = [calculatedSpacing, calculatedSpacing];
-                    
+
                     console.log('[SegmentStats] Calculated pixel spacing from clamped OBB data:', {
                       expectedDiameter,
                       pixelDistance,
                       calculatedSpacing,
-                      pixelSpacing
+                      pixelSpacing,
                     });
                   }
-                  
+
                   const spacingX = pixelSpacing[0]; // mm per pixel in X direction
                   const spacingY = pixelSpacing[1]; // mm per pixel in Y direction
-                  
+
                   // Get image origin and orientation from DICOM
                   const imageOrigin = metadata.imagePositionPatient || [0, 0, 0];
                   const imageOrientation = metadata.imageOrientationPatient || [1, 0, 0, 0, 1, 0];
-                  
+
                   // Convert clamped image pixel coordinates to physical world coordinates (mm)
-                  const startWorldX = imageOrigin[0] + (clampedStart[0] * spacingX * imageOrientation[0]) + (clampedStart[1] * spacingY * imageOrientation[3]);
-                  const startWorldY = imageOrigin[1] + (clampedStart[0] * spacingX * imageOrientation[1]) + (clampedStart[1] * spacingY * imageOrientation[4]);
-                  const startWorldZ = imageOrigin[2] + (clampedStart[0] * spacingX * imageOrientation[2]) + (clampedStart[1] * spacingY * imageOrientation[5]);
-                  
-                  const endWorldX = imageOrigin[0] + (clampedEnd[0] * spacingX * imageOrientation[0]) + (clampedEnd[1] * spacingY * imageOrientation[3]);
-                  const endWorldY = imageOrigin[1] + (clampedEnd[0] * spacingX * imageOrientation[1]) + (clampedEnd[1] * spacingY * imageOrientation[4]);
-                  const endWorldZ = imageOrigin[2] + (clampedEnd[0] * spacingX * imageOrientation[2]) + (clampedEnd[1] * spacingY * imageOrientation[5]);
-                  
+                  const startWorldX =
+                    imageOrigin[0] +
+                    clampedStart[0] * spacingX * imageOrientation[0] +
+                    clampedStart[1] * spacingY * imageOrientation[3];
+                  const startWorldY =
+                    imageOrigin[1] +
+                    clampedStart[0] * spacingX * imageOrientation[1] +
+                    clampedStart[1] * spacingY * imageOrientation[4];
+                  const startWorldZ =
+                    imageOrigin[2] +
+                    clampedStart[0] * spacingX * imageOrientation[2] +
+                    clampedStart[1] * spacingY * imageOrientation[5];
+
+                  const endWorldX =
+                    imageOrigin[0] +
+                    clampedEnd[0] * spacingX * imageOrientation[0] +
+                    clampedEnd[1] * spacingY * imageOrientation[3];
+                  const endWorldY =
+                    imageOrigin[1] +
+                    clampedEnd[0] * spacingX * imageOrientation[1] +
+                    clampedEnd[1] * spacingY * imageOrientation[4];
+                  const endWorldZ =
+                    imageOrigin[2] +
+                    clampedEnd[0] * spacingX * imageOrientation[2] +
+                    clampedEnd[1] * spacingY * imageOrientation[5];
+
                   startWorld = [startWorldX, startWorldY, startWorldZ];
                   endWorld = [endWorldX, endWorldY, endWorldZ];
-                  
+
                   console.log('[SegmentStats] Used DICOM pixel spacing with clamped coordinates:', {
                     clampedPixels: { start: clampedStart, end: clampedEnd },
                     pixelSpacing: { x: spacingX, y: spacingY },
                     imageOrigin,
                     imageOrientation,
                     worldCoords: { start: startWorld, end: endWorld },
-                    calculatedDistance: Math.sqrt(
-                      Math.pow(endWorldX - startWorldX, 2) + 
-                      Math.pow(endWorldY - startWorldY, 2) + 
-                      Math.pow(endWorldZ - startWorldZ, 2)
-                    ).toFixed(2) + 'mm'
+                    calculatedDistance:
+                      Math.sqrt(
+                        Math.pow(endWorldX - startWorldX, 2) +
+                          Math.pow(endWorldY - startWorldY, 2) +
+                          Math.pow(endWorldZ - startWorldZ, 2)
+                      ).toFixed(2) + 'mm',
                   });
                 }
               } catch (transformError) {
                 console.error('[SegmentStats] Coordinate transformation failed:', transformError);
-                throw new Error(`Failed to transform image coordinates to world space: ${transformError.message}`);
+                throw new Error(
+                  `Failed to transform image coordinates to world space: ${transformError.message}`
+                );
               }
             } else {
               throw new Error('Unsupported viewport type for coordinate transformation');
@@ -706,7 +800,10 @@ export function SegmentStats({
           console.log(
             `[SegmentStats] Converted OBB coordinates to Cornerstone world space for ${measurementType} diameter:`,
             {
-              obbCoordinates: { start: measurementData.coordinates.start, end: measurementData.coordinates.end },
+              obbCoordinates: {
+                start: measurementData.coordinates.start,
+                end: measurementData.coordinates.end,
+              },
               cornerstoneWorld: { startWorld, endWorld },
               sliceIndex: targetSliceIndex,
               measurementType,
@@ -714,7 +811,7 @@ export function SegmentStats({
               calculatedDistance:
                 Math.sqrt(
                   Math.pow(endWorld[0] - startWorld[0], 2) +
-                  Math.pow(endWorld[1] - startWorld[1], 2)
+                    Math.pow(endWorld[1] - startWorld[1], 2)
                 ).toFixed(2) + 'mm',
             }
           );
@@ -738,7 +835,9 @@ export function SegmentStats({
               }
               console.log('[SegmentStats] Enabled Length tool for viewport toolGroup');
             } else {
-              console.warn('[SegmentStats] No toolGroup found for viewport; annotation may not render');
+              console.warn(
+                '[SegmentStats] No toolGroup found for viewport; annotation may not render'
+              );
             }
           } catch (tgErr) {
             console.warn('[SegmentStats] Failed to enable Length tool on toolGroup', tgErr);
@@ -746,7 +845,7 @@ export function SegmentStats({
 
           // Create Length annotation data
           const annotationUID = `${measurementType}-diameter-${segmentationId}-${segmentIndex}-${Date.now()}`;
-          const camera = viewport.getCamera?.() || {} as any;
+          const camera = viewport.getCamera?.() || ({} as any);
           // Try to resolve a displaySetInstanceUID for MeasurementService mapping
           let displaySetInstanceUID: string | undefined;
           try {
@@ -785,8 +884,12 @@ export function SegmentStats({
           const finalECanvas = (viewport as any).worldToCanvas?.(endWorld);
           const el: any = (viewport as any).element;
           const canvasSize = el ? { w: el.clientWidth, h: el.clientHeight } : undefined;
-          const inBounds = (pt: any) => !!pt && pt[0] >= -5 && pt[1] >= -5 && (!canvasSize || (pt[0] <= canvasSize.w + 5 && pt[1] <= canvasSize.h + 5));
-          
+          const inBounds = (pt: any) =>
+            !!pt &&
+            pt[0] >= -5 &&
+            pt[1] >= -5 &&
+            (!canvasSize || (pt[0] <= canvasSize.w + 5 && pt[1] <= canvasSize.h + 5));
+
           console.log('[SegmentStats] Final segment-aligned positions', {
             currentImageIdIndex: (viewport as any).getCurrentImageIdIndex?.() ?? null,
             targetSliceIndex,
@@ -858,22 +961,41 @@ export function SegmentStats({
               renderingEngineId: (viewport as any).renderingEngineId,
             });
             annotation.state.addAnnotation(annotationData, el);
-            try { (annotation.state as any).setAnnotationViewportIds?.(annotationUID, [viewport.id]); } catch {}
+            try {
+              (annotation.state as any).setAnnotationViewportIds?.(annotationUID, [viewport.id]);
+            } catch {}
             // Force update to ensure state indexes and subscriptions catch this annotation
-            try { (annotation.state as any).updateAnnotation?.(annotationUID, annotationData); } catch {}
-            try { (annotation.state as any).annotationModified?.(annotationUID); } catch {}
+            try {
+              (annotation.state as any).updateAnnotation?.(annotationUID, annotationData);
+            } catch {}
+            try {
+              (annotation.state as any).annotationModified?.(annotationUID);
+            } catch {}
             try {
               const tools = await import('@cornerstonejs/tools');
               (tools as any).triggerAnnotationRenderForViewportIds?.([viewport.id]);
               (tools as any).triggerAnnotationRender?.(el);
             } catch {}
-            try { viewport.render?.(); } catch {}
+            try {
+              viewport.render?.();
+            } catch {}
           } catch (addErr) {
-            console.warn('[SegmentStats] addAnnotation with element failed, retrying without element', addErr);
-            try { (annotation.state as any).addAnnotation?.(annotationData); } catch {}
-            try { (annotation.state as any).updateAnnotation?.(annotationUID, annotationData); } catch {}
-            try { (annotation.state as any).annotationModified?.(annotationUID); } catch {}
-            try { (annotation.state as any).setAnnotationViewportIds?.(annotationUID, [viewport.id]); } catch {}
+            console.warn(
+              '[SegmentStats] addAnnotation with element failed, retrying without element',
+              addErr
+            );
+            try {
+              (annotation.state as any).addAnnotation?.(annotationData);
+            } catch {}
+            try {
+              (annotation.state as any).updateAnnotation?.(annotationUID, annotationData);
+            } catch {}
+            try {
+              (annotation.state as any).annotationModified?.(annotationUID);
+            } catch {}
+            try {
+              (annotation.state as any).setAnnotationViewportIds?.(annotationUID, [viewport.id]);
+            } catch {}
             try {
               const tools = await import('@cornerstonejs/tools');
               (tools as any).triggerAnnotationRenderForViewportIds?.([viewport.id]);
@@ -882,28 +1004,43 @@ export function SegmentStats({
           // Debug: log annotation count for this viewport
           try {
             const annsForVp = annotation.state.getAnnotations?.('Length', viewport.element) || [];
-            console.log('[SegmentStats] Length annotations on this viewport after add:', annsForVp.length);
+            console.log(
+              '[SegmentStats] Length annotations on this viewport after add:',
+              annsForVp.length
+            );
           } catch {}
           // Force active/visible selection in this viewport
-          try { (annotation.state as any).setAnnotationActive?.(annotationUID, viewport.element); } catch {}
-          try { (annotation.state as any).setAnnotationVisibility?.(annotationUID, true); } catch {}
-          try { (annotation.state as any).setAnnotationViewportIds?.(annotationUID, [viewport.id]); } catch {}
+          try {
+            (annotation.state as any).setAnnotationActive?.(annotationUID, viewport.element);
+          } catch {}
+          try {
+            (annotation.state as any).setAnnotationVisibility?.(annotationUID, true);
+          } catch {}
+          try {
+            (annotation.state as any).setAnnotationViewportIds?.(annotationUID, [viewport.id]);
+          } catch {}
           // Explicitly trigger annotation render on this viewport
           try {
             utilities.triggerAnnotationRenderForViewportIds?.([viewport.id]);
           } catch {}
           // Notify tools that annotation changed
-          try { (annotation.state as any).triggerAnnotationModified?.(annotationUID); } catch {}
+          try {
+            (annotation.state as any).triggerAnnotationModified?.(annotationUID);
+          } catch {}
 
           // Wait a moment for navigation to complete, then render
           setTimeout(() => {
             try {
               viewport.render();
-              try { utilities.triggerAnnotationRenderForViewportIds?.([viewport.id]); } catch {}
+              try {
+                utilities.triggerAnnotationRenderForViewportIds?.([viewport.id]);
+              } catch {}
               // Force a second render to ensure visibility
               setTimeout(() => {
                 viewport.render();
-                try { utilities.triggerAnnotationRenderForViewportIds?.([viewport.id]); } catch {}
+                try {
+                  utilities.triggerAnnotationRenderForViewportIds?.([viewport.id]);
+                } catch {}
                 console.log(
                   '[SegmentStats] Annotation should now be visible on slice:',
                   viewport.getCurrentImageIdIndex()
@@ -922,7 +1059,7 @@ export function SegmentStats({
 
           // Track the created measurement
           setCreatedMeasurements(prev => [...prev, annotationUID]);
-          
+
           // Update local state to ensure button updates immediately
           setMeasurementsVisible(true);
 
@@ -975,14 +1112,17 @@ export function SegmentStats({
     // Use the same logic as the button display: check both existing measurements and local state
     const hasExistingMeasurements = checkExistingMeasurements();
     const shouldHide = hasExistingMeasurements || measurementsVisible;
-    
+
     if (shouldHide) {
       // Hide measurements - remove existing annotations for this segment
       await removeExistingMeasurements();
       setMeasurementsVisible(false);
       setCreatedMeasurements([]);
-      console.log('[SegmentStats] Removed existing measurements for segment', { segmentationId, segmentIndex });
-      
+      console.log('[SegmentStats] Removed existing measurements for segment', {
+        segmentationId,
+        segmentIndex,
+      });
+
       // Force re-render to update button state
       setForceUpdate(prev => prev + 1);
     } else {
@@ -990,8 +1130,11 @@ export function SegmentStats({
       await createDiameterMeasurement('max');
       await createDiameterMeasurement('min');
       setMeasurementsVisible(true);
-      console.log('[SegmentStats] Created new measurements for segment', { segmentationId, segmentIndex });
-      
+      console.log('[SegmentStats] Created new measurements for segment', {
+        segmentationId,
+        segmentIndex,
+      });
+
       // Force re-render to update button state after a short delay to ensure annotations are created
       setTimeout(() => {
         setForceUpdate(prev => prev + 1);
@@ -1081,7 +1224,7 @@ export function SegmentStats({
   > = {
     volume: {
       label: 'Volume',
-      unit: 'mL',
+      unit: 'mL', // Volume is always in mL (cubic centimeters) from useSegmentationDataSync.ts
       showLoading: true, // Show loading for volume as well
     },
     diameter: {
@@ -1115,6 +1258,15 @@ export function SegmentStats({
     return null;
   };
 
+  // Check if the current segment has a non-measurable classification type
+  const isNonMeasurableClassification = useMemo(() => {
+    // Get the segment's classification
+    const classification = stats?.lession_classification;
+    
+    // Check if it's one of the optional classifications that should hide measurements
+    return classification && optionalClassifications.includes(classification);
+  }, [stats]);
+
   return (
     <div className="ml-7 flex flex-col px-2 py-2">
       {Object.entries(segmentAdditionalStats).map(([key, value]) => (
@@ -1132,40 +1284,43 @@ export function SegmentStats({
                     // For volume and diameter, only show if we have calculated values or if calculation is complete
                     if (key === 'volume' || key === 'diameter' || key === 'minDiameter') {
                       // Check if this is a calculated value (has specific calculated properties)
-                      const hasCalculatedDiameter = stats.maxDiameterSlice !== undefined || stats.minDiameterSlice !== undefined;
+                      const hasCalculatedDiameter =
+                        stats.maxDiameterSlice !== undefined ||
+                        stats.minDiameterSlice !== undefined;
                       // For volume, check if we're currently calculating or if calculation is complete (not calculating)
                       const isVolumeCalculating = isCurrentlyCalculating;
-                      
+
                       // For diameter fields, only show if we have calculated diameter data
                       if ((key === 'diameter' || key === 'minDiameter') && !hasCalculatedDiameter) {
                         return '--';
                       }
-                      
+
                       // For volume, only show if we're not currently calculating (meaning calculation is complete)
                       if (key === 'volume' && isVolumeCalculating) {
                         return '--';
                       }
-                      
+
                       // If we have calculated data, show it
                       if (stats[key]) {
-                        // Convert legacy mm³ values to mL for volume (values > 1000 are likely in mm³)
-                        let displayValue = stats[key];
-                        if (key === 'volume' && displayValue && displayValue > 1000) {
-                          displayValue = displayValue / 1000;
-                          console.log(`[SegmentStats] Converting legacy volume from ${stats[key]} mm³ to ${displayValue} mL`);
+                        // Volume is already in mL from useSegmentationDataSync.ts
+                        // Use our specialized formatter for volume values
+                        if (key === 'volume') {
+                          return `${formatVolumeForDisplay(stats[key])} ${value.unit || ''}`;
+                        } else {
+                          // For other numeric values, use the general formatter
+                          return `${formatValue(stats[key])} ${value.unit || ''}`;
                         }
-                        return `${formatValue(displayValue)} ${value.unit || ''}`;
                       }
                     } else {
                       // For other fields (like affected_organs), show normally
                       return stats[key] ? `${formatValue(stats[key])} ${value.unit || ''}` : '--';
                     }
                     return '--';
-                  })()
-              }
+                  })()}
             </span>
             {value.showLoading && isCurrentlyCalculating && <PulseIndicator />}
-            {key === 'diameter' && stats.maxDiameterSlice !== undefined && (
+            {/* Only show measurement and slice navigation controls if NOT a non-measurable classification */}
+            {key === 'diameter' && stats.maxDiameterSlice !== undefined && !isNonMeasurableClassification && (
               <div className="flex items-center gap-1">
                 <button
                   onClick={() => navigateToSlice(stats.maxDiameterSlice)}
@@ -1191,7 +1346,8 @@ export function SegmentStats({
                 </button>
               </div>
             )}
-            {/* {key === 'minDiameter' && stats.minDiameterSlice !== undefined && (
+            {/* Only show min diameter slice navigation if NOT a non-measurable classification */}
+            {/* {key === 'minDiameter' && stats.minDiameterSlice !== undefined && !isNonMeasurableClassification && (
               <div className="flex items-center gap-1">
                 <button
                   onClick={() => navigateToSlice(stats.minDiameterSlice)}

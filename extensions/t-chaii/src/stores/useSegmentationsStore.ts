@@ -132,7 +132,8 @@ const createSegmentationsStore = (set, get) => ({
         // Update the cornerstone segment with additional info
         segment.cachedStats = {
           ...segment.cachedStats,
-          volume: segmentInfo.volume,
+          // API provides volume in mm³, convert to mL (divide by 1000)
+          volume: segmentInfo.volume / 1000,
           diameter: segmentInfo.major_axis_mm || segmentInfo.axial_diameter, // Use major_axis_mm as primary diameter
           majorAxisMm: segmentInfo.major_axis_mm,
           minorAxisMm: segmentInfo.minor_axis_mm,

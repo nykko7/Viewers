@@ -3,13 +3,15 @@ import { useSegmentationsStore } from '../../../stores/useSegmentationsStore';
 import { cache, metaData, utilities } from '@cornerstonejs/core';
 import { segmentation as cstSegmentation, Enums as cstEnums } from '@cornerstonejs/tools';
 import { calculateOBBDiameters } from '../utils/obbCalculation';
+import { calculateVolumeInMl } from '../utils/volumeUnits';
 
 const { SegmentationRepresentations } = cstEnums;
 
 // Types
 interface SegmentStats {
   voxelCount: number;
-  volume: number; // Volume in mL
+  volume: number; // Volume in mL (cubic centimeters)
+  volumeMm3?: number; // Volume in cubic millimeters
   diameter: number; // Diameter in mm
   majorAxisMm?: number;
   minorAxisMm?: number;
@@ -133,7 +135,7 @@ async function handleSegmentationDataModified(
   const activeSegment = Object.values(segmentation.segments || {}).find(
     (segment: any) => segment.active
   );
-  activeSegmentIndex = activeSegment?.segmentIndex;
+  activeSegmentIndex = (activeSegment as any)?.segmentIndex;
   console.log(
     '[handleSegmentationDataModified] Active segment index from segmentation data:',
     activeSegmentIndex
@@ -453,7 +455,7 @@ function calculateBasicStats(
   Object.entries(segmentVoxelCounts).forEach(([segmentIndexStr, voxelCount]) => {
     const segmentIndex = parseInt(segmentIndexStr);
     const volumeMm3 = voxelCount * voxelVolume;
-    const volumeCm3 = volumeMm3 / 1000;
+    const volumeMl = calculateVolumeInMl(voxelCount, [spacing[0], spacing[1], spacing[2]]);
 
     // Calculate spherical diameter (assuming spherical lesion)
     const radius = Math.pow((3 * volumeMm3) / (4 * Math.PI), 1 / 3);
@@ -464,9 +466,8 @@ function calculateBasicStats(
       segment.cachedStats = {
         ...segment.cachedStats,
         voxelCount,
-        volume: volumeCm3, // Store volume in mL (same as volumeCm3)
-        volumeMm3,
-        volumeCm3,
+        volume: volumeMl, // Store volume in mL (cubic centimeters)
+        volumeMm3, // Also store the original mm³ value for reference
         diameter,
       };
 
@@ -509,7 +510,7 @@ async function calculateStatsWithOBB(
   for (const [segmentIndexStr, voxelCount] of Object.entries(segmentVoxelCounts)) {
     const segmentIndex = parseInt(segmentIndexStr);
     const volumeMm3 = voxelCount * voxelVolume;
-    const volumeCm3 = volumeMm3 / 1000;
+    const volumeMl = calculateVolumeInMl(voxelCount, [spacing[0], spacing[1], spacing[2]]);
 
     // Calculate spherical diameter as fallback
     const radius = Math.pow((3 * volumeMm3) / (4 * Math.PI), 1 / 3);
@@ -549,9 +550,8 @@ async function calculateStatsWithOBB(
       segment.cachedStats = {
         ...segment.cachedStats,
         voxelCount,
-        volume: volumeCm3, // Store volume in mL (same as volumeCm3)
-        volumeMm3,
-        volumeCm3,
+        volume: volumeMl, // Store volume in mL (cubic centimeters)
+        volumeMm3, // Also store the original mm³ value for reference
         diameter: Math.max(majorAxisMm, minorAxisMm), // Use the larger diameter
         majorAxisMm,
         minorAxisMm,
@@ -744,7 +744,7 @@ async function calculateStatsFromImageIds(
       // Update segments with real statistics
       Object.entries(realStats).forEach(([segmentIndexStr, stats]) => {
         const segmentIndex = parseInt(segmentIndexStr);
-        const segment = segmentation.segments[segmentIndex];
+        const segment = segmentation.segments[segmentIndex as number];
 
         if (segment) {
           // Transform internal SegmentStats format to SegmentStatsType format for UI

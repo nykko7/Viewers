@@ -193,7 +193,8 @@ function modeFactory({ modeConfiguration }) {
               cachedStats: {
                 ...segment.cachedStats,
                 id: segmentInfo.id,
-                volume: segmentInfo.volume,
+                // API provides volume in mm³, convert to mL (divide by 1000)
+                volume: segmentInfo.volume / 1000,
                 diameter: segmentInfo.axial_diameter,
                 axial_diameter: segmentInfo.axial_diameter,
                 coronal_diameter: segmentInfo.coronal_diameter,

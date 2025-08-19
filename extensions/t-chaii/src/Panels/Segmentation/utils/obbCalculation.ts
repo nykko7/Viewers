@@ -333,7 +333,7 @@ export function calculateOBBDiameters(
   ];
 
   // Process each slice
-  for (let z = 0; z < depth; z++) {
+  for (let z = depth - 1; z >= 0; z--) {
     try {
       // Extract slice data
       const sliceData = new Uint8Array(width * height);
@@ -411,8 +411,8 @@ export function calculateOBBDiameters(
         { x: obb.minorAxis[1].x * xSpacing, y: obb.minorAxis[1].y * ySpacing },
       ];
 
-      const maxDiameter = distance(majorAxisWorld[0], majorAxisWorld[1]);
-      const minDiameter = distance(minorAxisWorld[0], minorAxisWorld[1]);
+      const maxDiameter = parseFloat(distance(majorAxisWorld[0], majorAxisWorld[1]).toFixed(2));
+      const minDiameter = parseFloat(distance(minorAxisWorld[0], minorAxisWorld[1]).toFixed(2));
 
       // Store slice result
       const sliceResult: SliceResult = {
@@ -438,7 +438,7 @@ export function calculateOBBDiameters(
       }
 
       console.log(
-        `[OBB] Slice ${z}: max=${maxDiameter.toFixed(2)}mm, min=${minDiameter.toFixed(2)}mm, area=${maxArea.toFixed(1)}px²`
+        `[OBB] Slice ${z}: max=${maxDiameter}mm, min=${minDiameter}mm, area=${maxArea}px²`
       );
     } catch (error) {
       console.warn(`[OBB] Error processing slice ${z}:`, error);
@@ -446,11 +446,9 @@ export function calculateOBBDiameters(
   }
 
   console.log(`[OBB] Completed OBB calculation: ${sliceResults.length} slices processed`);
+  console.log(`[OBB] Overall max diameter: ${maxOverallDiameter}mm (slice ${maxDiameterSlice})`);
   console.log(
-    `[OBB] Overall max diameter: ${maxOverallDiameter.toFixed(2)}mm (slice ${maxDiameterSlice})`
-  );
-  console.log(
-    `[OBB] Corresponding min diameter: ${correspondingMinDiameter.toFixed(2)}mm (same slice ${maxDiameterSlice})`
+    `[OBB] Corresponding min diameter: ${correspondingMinDiameter}mm (same slice ${maxDiameterSlice})`
   );
 
   return {
